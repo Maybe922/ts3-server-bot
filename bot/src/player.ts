@@ -56,6 +56,22 @@ export class Player {
     }
   }
 
+  /** 整单入队（歌单），空闲则立即开播。 */
+  async enqueueMany(tracks: Track[]): Promise<void> {
+    this.queue.push(...tracks);
+    if (!this.current) {
+      await this.playNext();
+    }
+  }
+
+  /** 打乱当前队列。 */
+  shuffle(): void {
+    for (let i = this.queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.queue[i], this.queue[j]] = [this.queue[j], this.queue[i]];
+    }
+  }
+
   async skip(): Promise<void> {
     this.stopCurrent();
     await this.playNext();

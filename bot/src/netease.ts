@@ -38,6 +38,51 @@ export async function streamUrl(id: number): Promise<string> {
   return url;
 }
 
+// —— 歌单 ——
+
+export interface Playlist {
+  id: number;
+  name: string;
+  tracks: Track[];
+}
+
+// 单次入队上限：防止把几千首的歌单一次塞爆队列
+const PLAYLIST_MAX_TRACKS = 500;
+
+/** 支持直接传歌单 ID，或粘贴分享链接（自动提取 id= 参数）。 */
+function parsePlaylistId(input: string): number {
+  const fromUrl = input.match(/[?&]id=(\d+)/);
+  const raw = fromUrl ? fromUrl[1] : input.trim();
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("无法识别歌单，请粘贴歌单链接或数字 ID");
+  }
+  return id;
+}
+
+export async function playlist(idOrUrl: string): Promise<Playlist> {
+  const id = parsePlaylistId(idOrUrl);
+  const [detailRes, tracksRes] = await Promise.all([
+    api.playlist_detail({ id, cookie }),
+    api.playlist_track_all({ id, limit: PLAYLIST_MAX_TRACKS, cookie } as any),
+  ]);
+  const name = (detailRes.body as any)?.playlist?.name ?? `歌单 ${id}`;
+  const songs = (tracksRes.body as any)?.songs ?? [];
+  if (songs.length === 0) {
+    throw new Error("歌单为空或无法访问（私密歌单需登录对应账号）");
+  }
+  return {
+    id,
+    name,
+    tracks: songs.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      artist: (s.ar ?? []).map((a: any) => a.name).join("/") || "未知",
+      durationMs: s.dt ?? 0,
+    })),
+  };
+}
+
 // —— 扫码登录 ——
 
 export async function qrStart(): Promise<{ key: string; qrimg: string }> {

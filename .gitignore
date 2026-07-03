@@ -8,3 +8,4 @@ bot/bot.log
 web/node_modules/
 web/dist/
 data-*/
+web/tsconfig.tsbuildinfo

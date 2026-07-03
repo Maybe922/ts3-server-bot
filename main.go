@@ -18,7 +18,7 @@ import (
 	"ts3panel/internal/tsserver"
 )
 
-//go:embed web
+//go:embed all:web/dist
 var webFS embed.FS
 
 const (
@@ -40,7 +40,7 @@ func main() {
 	botConfig := flag.String("bot-config", "bot/data/config.json", "点歌 Bot 的配置文件路径")
 	flag.Parse()
 
-	static, err := fs.Sub(webFS, "web")
+	static, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
 		log.Fatalf("加载内嵌前端资源失败: %v", err)
 	}
@@ -83,6 +83,8 @@ func main() {
 	mux.HandleFunc("GET /api/bot/status", s.requireAuth(s.botForward("GET", "/status")))
 	mux.HandleFunc("POST /api/bot/search", s.requireAuth(s.botForward("POST", "/search")))
 	mux.HandleFunc("POST /api/bot/play", s.requireAuth(s.botForward("POST", "/play")))
+	mux.HandleFunc("POST /api/bot/playlist", s.requireAuth(s.botForward("POST", "/playlist")))
+	mux.HandleFunc("POST /api/bot/shuffle", s.requireAuth(s.botForward("POST", "/shuffle")))
 	mux.HandleFunc("POST /api/bot/skip", s.requireAuth(s.botForward("POST", "/skip")))
 	mux.HandleFunc("POST /api/bot/stop", s.requireAuth(s.botForward("POST", "/stop")))
 	mux.HandleFunc("POST /api/bot/volume", s.requireAuth(s.botForward("POST", "/volume")))

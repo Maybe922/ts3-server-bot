@@ -1,6 +1,6 @@
 // 控制 API：只绑本机回环，供面板代理调用。Bearer Token 鉴权。
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { search, qrStart, qrCheck, profile, logout } from "./netease.js";
+import { search, playlist, qrStart, qrCheck, profile, logout } from "./netease.js";
 import type { Player } from "./player.js";
 import type { TSClient } from "./ts-client.js";
 import type { BotConfig } from "./config.js";
@@ -34,6 +34,20 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
         await player.enqueue({ id: Number(id), name: String(name), artist: String(artist ?? ""), durationMs: Number(durationMs ?? 0) });
         return send(res, 200, { success: true, data: { message: "已加入队列" } });
       }
+      case "POST /playlist": {
+        const { idOrUrl, shuffle } = await body(req);
+        if (!idOrUrl) return send(res, 400, { success: false, error: "缺少歌单链接或 ID" });
+        const pl = await playlist(String(idOrUrl));
+        await player.enqueueMany(pl.tracks);
+        if (shuffle) player.shuffle();
+        return send(res, 200, {
+          success: true,
+          data: { message: `已加入歌单「${pl.name}」共 ${pl.tracks.length} 首`, name: pl.name, added: pl.tracks.length },
+        });
+      }
+      case "POST /shuffle":
+        player.shuffle();
+        return send(res, 200, { success: true, data: { message: "队列已打乱" } });
       case "POST /skip":
         await player.skip();
         return send(res, 200, { success: true, data: { message: "已切歌" } });
