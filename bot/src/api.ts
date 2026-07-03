@@ -1,6 +1,6 @@
 // 控制 API：只绑本机回环，供面板代理调用。Bearer Token 鉴权。
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { search } from "./netease.js";
+import { search, qrStart, qrCheck, profile, logout } from "./netease.js";
 import type { Player } from "./player.js";
 import type { TSClient } from "./ts-client.js";
 import type { BotConfig } from "./config.js";
@@ -47,6 +47,18 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
         player.volume = vol;
         return send(res, 200, { success: true, data: { volume: vol } });
       }
+      case "POST /netease/qr/start":
+        return send(res, 200, { success: true, data: await qrStart() });
+      case "POST /netease/qr/check": {
+        const { key } = await body(req);
+        if (!key) return send(res, 400, { success: false, error: "缺少 key" });
+        return send(res, 200, { success: true, data: await qrCheck(String(key)) });
+      }
+      case "GET /netease/profile":
+        return send(res, 200, { success: true, data: await profile() });
+      case "POST /netease/logout":
+        logout();
+        return send(res, 200, { success: true, data: { message: "已退出网易云账号" } });
       default:
         return send(res, 404, { success: false, error: "未知接口" });
     }

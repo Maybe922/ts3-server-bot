@@ -185,6 +185,38 @@
     <div id="client-list"></div>
   </section>
 
+  <!-- 点歌台：Bot 在线时可用 -->
+  <section class="ops" id="ops-music">
+    <h2>点歌台 <span id="bot-state" class="meta"></span></h2>
+    <div id="music-body" class="hidden">
+      <div class="row" style="padding-left:0">
+        <span class="grow meta" id="netease-account">网易云账号: 查询中…</span>
+        <button class="secondary" id="btn-netease-login">扫码登录</button>
+        <button class="secondary hidden" id="btn-netease-logout">退出账号</button>
+      </div>
+      <div class="creds hidden" id="qr-box" style="text-align:center">
+        <p id="qr-hint">用网易云音乐 App 扫码</p>
+        <img id="qr-img" alt="网易云登录二维码" style="width:180px;height:180px;border-radius:8px">
+      </div>
+      <div class="row" style="padding-left:0">
+        <span class="grow" id="now-playing">没有正在播放的歌曲</span>
+        <button class="secondary" id="btn-skip">切歌</button>
+        <button class="secondary" id="btn-music-stop">停止</button>
+      </div>
+      <div class="row" style="padding-left:0">
+        <span class="meta">音量</span>
+        <input type="range" id="vol" min="0" max="100" step="5" style="flex:1">
+        <span class="meta" id="vol-num"></span>
+      </div>
+      <div id="music-queue"></div>
+      <div class="inline-form">
+        <input type="text" id="song-kw" placeholder="搜索歌曲（网易云）" maxlength="60">
+        <button id="btn-song-search">搜索</button>
+      </div>
+      <div id="song-results"></div>
+    </div>
+  </section>
+
   <div class="creds hidden" id="creds">
     <h2>⚠ 管理凭据（请妥善保存）</h2>
     <p>连接地址：<code id="c-addr">…</code></p>
@@ -253,6 +285,7 @@ async function refresh() {
     }
     ['ops-overview', 'ops-channels', 'ops-clients'].forEach(id => show($(id), s.serverRunning));
     if (s.serverRunning) refreshOps();
+    refreshBot();
   } catch (e) {
     if (e.message !== '未登录') setMsg($('msg'), e.message, true);
   }
@@ -321,6 +354,138 @@ async function refreshOps() {
     if (e.message !== '未登录') setMsg($('msg'), e.message, true);
   }
 }
+
+// —— 点歌台 ——
+let volDragging = false;
+let qrTimer = null;
+
+async function refreshNetease() {
+  try {
+    const p = await api('/api/bot/netease/profile');
+    if (p.loggedIn) {
+      $('netease-account').textContent = '网易云账号: ' + p.nickname + (p.vip ? '（VIP）' : '（普通账号）');
+      show($('btn-netease-login'), false);
+      show($('btn-netease-logout'), true);
+    } else {
+      $('netease-account').textContent = '网易云账号: 未登录（只能播放免费歌曲）';
+      show($('btn-netease-login'), true);
+      show($('btn-netease-logout'), false);
+    }
+  } catch { /* Bot 不在线时由外层处理 */ }
+}
+
+$('btn-netease-login').onclick = async () => {
+  try {
+    const { key, qrimg } = await api('/api/bot/netease/qr/start', {});
+    $('qr-img').src = qrimg;
+    $('qr-hint').textContent = '用网易云音乐 App 扫码';
+    show($('qr-box'), true);
+    clearInterval(qrTimer);
+    qrTimer = setInterval(async () => {
+      try {
+        const r = await api('/api/bot/netease/qr/check', { key });
+        $('qr-hint').textContent = r.message;
+        if (r.code === 803) {
+          clearInterval(qrTimer);
+          setTimeout(() => show($('qr-box'), false), 1500);
+          refreshNetease();
+        } else if (r.code === 800) {
+          clearInterval(qrTimer);
+        }
+      } catch (e) {
+        clearInterval(qrTimer);
+        $('qr-hint').textContent = e.message;
+      }
+    }, 2000);
+  } catch (e) {
+    setMsg($('msg'), e.message, true);
+  }
+};
+
+$('btn-netease-logout').onclick = async () => {
+  if (!confirm('退出网易云账号？VIP 歌曲将无法播放。')) return;
+  try { await api('/api/bot/netease/logout', {}); refreshNetease(); }
+  catch (e) { setMsg($('msg'), e.message, true); }
+};
+
+async function refreshBot() {
+  try {
+    const s = await api('/api/bot/status');
+    $('bot-state').textContent = s.connected ? '● 在线' : '○ 已启动但未连上服务器';
+    const firstShow = $('music-body').classList.contains('hidden');
+    show($('music-body'), true);
+    if (firstShow) refreshNetease();
+    $('now-playing').textContent = s.current
+      ? '♪ ' + s.current.name + ' - ' + s.current.artist
+      : '没有正在播放的歌曲';
+    if (!volDragging) {
+      $('vol').value = s.volume;
+      $('vol-num').textContent = s.volume;
+    }
+    const queueBox = $('music-queue');
+    queueBox.replaceChildren();
+    s.queue.forEach((t, i) => {
+      const div = document.createElement('div');
+      div.className = 'row';
+      const grow = document.createElement('span');
+      grow.className = 'grow';
+      grow.textContent = (i + 1) + '. ' + t.name + ' - ' + t.artist;
+      div.appendChild(grow);
+      queueBox.appendChild(div);
+    });
+  } catch (e) {
+    $('bot-state').textContent = '○ 未运行';
+    show($('music-body'), false);
+  }
+}
+
+$('btn-song-search').onclick = async () => {
+  const kw = $('song-kw').value.trim();
+  if (!kw) return;
+  const box = $('song-results');
+  box.replaceChildren();
+  try {
+    const songs = await api('/api/bot/search', { keyword: kw });
+    if (!songs.length) {
+      const div = document.createElement('div');
+      div.className = 'empty';
+      div.textContent = '没有找到歌曲';
+      box.appendChild(div);
+      return;
+    }
+    songs.forEach(song => {
+      box.appendChild(makeRow(
+        song.name + ' - ' + song.artist,
+        Math.round(song.durationMs / 60000) + ':' + String(Math.round(song.durationMs / 1000) % 60).padStart(2, '0'),
+        '点播',
+        async () => {
+          try {
+            await api('/api/bot/play', song);
+            setMsg($('msg'), '已点播「' + song.name + '」', false);
+            refreshBot();
+          } catch (e) { setMsg($('msg'), e.message, true); }
+        }));
+    });
+  } catch (e) {
+    setMsg($('msg'), e.message, true);
+  }
+};
+$('song-kw').onkeydown = e => { if (e.key === 'Enter') $('btn-song-search').click(); };
+
+$('btn-skip').onclick = async () => {
+  try { await api('/api/bot/skip', {}); refreshBot(); }
+  catch (e) { setMsg($('msg'), e.message, true); }
+};
+$('btn-music-stop').onclick = async () => {
+  try { await api('/api/bot/stop', {}); refreshBot(); }
+  catch (e) { setMsg($('msg'), e.message, true); }
+};
+$('vol').oninput = () => { volDragging = true; $('vol-num').textContent = $('vol').value; };
+$('vol').onchange = async () => {
+  volDragging = false;
+  try { await api('/api/bot/volume', { value: Number($('vol').value) }); }
+  catch (e) { setMsg($('msg'), e.message, true); }
+};
 
 $('btn-rename').onclick = async () => {
   const name = prompt('新的服务器名称：', $('ov-name').textContent);

@@ -10,7 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"io"
+
 	"ts3panel/internal/auth"
+	"ts3panel/internal/musicbot"
 	"ts3panel/internal/query"
 	"ts3panel/internal/tsserver"
 )
@@ -27,12 +30,14 @@ const (
 type server struct {
 	ts   *tsserver.Manager
 	auth *auth.Store
+	bot  *musicbot.Proxy
 }
 
 func main() {
 	addr := flag.String("addr", ":8090", "面板监听地址")
 	dataDir := flag.String("data", "data", "数据目录（存放 TS3 服务端、凭据、pid）")
 	supervisor := flag.String("supervisor", "auto", "ts3server 托管方式: auto | systemd | direct")
+	botConfig := flag.String("bot-config", "bot/data/config.json", "点歌 Bot 的配置文件路径")
 	flag.Parse()
 
 	static, err := fs.Sub(webFS, "web")
@@ -51,6 +56,7 @@ func main() {
 	s := &server{
 		ts:   tsserver.NewManager(*dataDir, useSystemd),
 		auth: auth.NewStore(*dataDir),
+		bot:  musicbot.NewProxy(*botConfig),
 	}
 
 	mux := http.NewServeMux()
@@ -73,6 +79,17 @@ func main() {
 	mux.HandleFunc("GET /api/ts/channels", s.requireAuth(s.handleChannels))
 	mux.HandleFunc("POST /api/ts/channels/create", s.requireAuth(s.handleChannelCreate))
 	mux.HandleFunc("POST /api/ts/channels/delete", s.requireAuth(s.handleChannelDelete))
+	// 点歌 Bot（代理到 Bot 的本机控制 API）
+	mux.HandleFunc("GET /api/bot/status", s.requireAuth(s.botForward("GET", "/status")))
+	mux.HandleFunc("POST /api/bot/search", s.requireAuth(s.botForward("POST", "/search")))
+	mux.HandleFunc("POST /api/bot/play", s.requireAuth(s.botForward("POST", "/play")))
+	mux.HandleFunc("POST /api/bot/skip", s.requireAuth(s.botForward("POST", "/skip")))
+	mux.HandleFunc("POST /api/bot/stop", s.requireAuth(s.botForward("POST", "/stop")))
+	mux.HandleFunc("POST /api/bot/volume", s.requireAuth(s.botForward("POST", "/volume")))
+	mux.HandleFunc("POST /api/bot/netease/qr/start", s.requireAuth(s.botForward("POST", "/netease/qr/start")))
+	mux.HandleFunc("POST /api/bot/netease/qr/check", s.requireAuth(s.botForward("POST", "/netease/qr/check")))
+	mux.HandleFunc("GET /api/bot/netease/profile", s.requireAuth(s.botForward("GET", "/netease/profile")))
+	mux.HandleFunc("POST /api/bot/netease/logout", s.requireAuth(s.botForward("POST", "/netease/logout")))
 
 	log.Printf("ts3panel %s 已启动，监听 %s，数据目录 %s", version, *addr, *dataDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -314,6 +331,26 @@ func (s *server) handleChannelCreate(w http.ResponseWriter, r *http.Request) {
 	s.withQuery(w, func(sess *query.Session) (any, error) {
 		return map[string]string{"message": "频道已创建"}, sess.CreateChannel(req.Name)
 	})
+}
+
+// botForward 生成一个把请求原样转发给点歌 Bot 的处理器。
+// Bot 与面板使用同款 JSON 信封，响应直接透传。
+func (s *server) botForward(method, path string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+		if err != nil {
+			respond(w, http.StatusBadRequest, nil, "请求体过大或读取失败")
+			return
+		}
+		status, respBody, err := s.bot.Forward(method, path, body)
+		if err != nil {
+			respond(w, http.StatusServiceUnavailable, nil, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		w.Write(respBody)
+	}
 }
 
 func (s *server) handleChannelDelete(w http.ResponseWriter, r *http.Request) {
