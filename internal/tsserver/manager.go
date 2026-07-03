@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,12 @@ import (
 	"time"
 )
 
-const stopTimeout = 10 * time.Second
+const (
+	stopTimeout = 10 * time.Second
+	// 启动后等待 ServerQuery 端口就绪的上限
+	readyTimeout = 25 * time.Second
+	queryPort    = "127.0.0.1:10011"
+)
 
 // Credentials 是 TS3 首次启动时生成的管理凭据，抓取后落盘保存。
 type Credentials struct {
@@ -26,20 +32,23 @@ type Credentials struct {
 }
 
 // Manager 负责 TS3 服务端的安装与进程生命周期。
+// systemd 为 true 时 ts3server 注册为独立 systemd 服务（生产模式）；
+// 否则作为面板子进程运行（开发/降级模式，面板退出会连带停服）。
 type Manager struct {
 	mu      sync.Mutex
 	baseDir string
+	systemd bool
 	cmd     *exec.Cmd
 }
 
-func NewManager(baseDir string) *Manager {
+func NewManager(baseDir string, systemd bool) *Manager {
 	// 转为绝对路径：启动子进程时 cmd.Dir 会先切换工作目录，
 	// 相对路径会在子进程的新工作目录下解析而找不到二进制。
 	abs, err := filepath.Abs(baseDir)
 	if err != nil {
 		abs = baseDir
 	}
-	return &Manager{baseDir: abs}
+	return &Manager{baseDir: abs, systemd: systemd}
 }
 
 func (m *Manager) serverDir() string { return filepath.Join(m.baseDir, "server") }
@@ -63,6 +72,9 @@ func (m *Manager) installedLocked() bool {
 func (m *Manager) Running() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.systemd {
+		return m.runningSystemd()
+	}
 	return m.runningPID() != 0
 }
 
@@ -83,14 +95,48 @@ func (m *Manager) runningPID() int {
 	return pid
 }
 
-// Start 启动 TS3 进程并在后台抓取首次启动打印的管理凭据。
+// Start 启动 TS3 并阻塞等待 ServerQuery 端口就绪（最长 readyTimeout），
+// 避免面板在服务器初始化完成前就去连接而报错。
 func (m *Manager) Start() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if !m.installedLocked() {
+		m.mu.Unlock()
 		return errors.New("服务器尚未安装")
 	}
+
+	var err error
+	if m.systemd {
+		if m.runningSystemd() {
+			m.mu.Unlock()
+			return errors.New("服务器已在运行")
+		}
+		err = m.startSystemd()
+	} else {
+		err = m.startDirect()
+	}
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return waitReady()
+}
+
+// waitReady 轮询 ServerQuery 端口直到可连接。
+func waitReady() error {
+	deadline := time.Now().Add(readyTimeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", queryPort, time.Second)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return errors.New("服务器已启动但初始化超时，请稍后刷新重试")
+}
+
+// startDirect 以面板子进程方式启动（开发/降级模式）。
+func (m *Manager) startDirect() error {
 	if m.runningPID() != 0 {
 		return errors.New("服务器已在运行")
 	}
@@ -122,11 +168,22 @@ func (m *Manager) Start() error {
 	return nil
 }
 
-// Stop 先礼后兵地停止 TS3 进程。
+// Stop 停止 TS3 进程。
 func (m *Manager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.systemd {
+		if !m.runningSystemd() {
+			return errors.New("服务器未在运行")
+		}
+		return m.stopSystemd()
+	}
+	return m.stopDirect()
+}
+
+// stopDirect 先礼后兵地停止子进程模式的 TS3。
+func (m *Manager) stopDirect() error {
 	pid := m.runningPID()
 	if pid == 0 {
 		return errors.New("服务器未在运行")

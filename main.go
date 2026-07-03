@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"time"
 
 	"ts3panel/internal/auth"
 	"ts3panel/internal/query"
@@ -31,6 +32,7 @@ type server struct {
 func main() {
 	addr := flag.String("addr", ":8090", "面板监听地址")
 	dataDir := flag.String("data", "data", "数据目录（存放 TS3 服务端、凭据、pid）")
+	supervisor := flag.String("supervisor", "auto", "ts3server 托管方式: auto | systemd | direct")
 	flag.Parse()
 
 	static, err := fs.Sub(webFS, "web")
@@ -38,8 +40,16 @@ func main() {
 		log.Fatalf("加载内嵌前端资源失败: %v", err)
 	}
 
+	useSystemd := *supervisor == "systemd" ||
+		(*supervisor == "auto" && tsserver.SystemdAvailable())
+	mode := "direct（面板子进程，仅供开发调试）"
+	if useSystemd {
+		mode = "systemd（独立服务，与面板解耦）"
+	}
+	log.Printf("ts3server 托管方式: %s", mode)
+
 	s := &server{
-		ts:   tsserver.NewManager(*dataDir),
+		ts:   tsserver.NewManager(*dataDir, useSystemd),
 		auth: auth.NewStore(*dataDir),
 	}
 
@@ -212,6 +222,7 @@ func (s *server) handleStop(w http.ResponseWriter, r *http.Request) {
 }
 
 // querySession 建立一条已登录的 ServerQuery 会话，调用方负责 Close。
+// 服务器刚启动的几秒内端口尚未就绪，带短暂重试消除误报。
 func (s *server) querySession() (*query.Session, error) {
 	if !s.ts.Running() {
 		return nil, errors.New("TS3 服务器未在运行")
@@ -220,7 +231,15 @@ func (s *server) querySession() (*query.Session, error) {
 	if !ok {
 		return nil, errors.New("尚未获取到 Query 凭据，请先启动一次服务器")
 	}
-	return query.Connect(queryAddr, creds.QueryUser, creds.QueryPassword)
+	var sess *query.Session
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if sess, err = query.Connect(queryAddr, creds.QueryUser, creds.QueryPassword); err == nil {
+			return sess, nil
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	return nil, err
 }
 
 // withQuery 处理会话建立/关闭的样板，把业务逻辑收敛到回调里。
