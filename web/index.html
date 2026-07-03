@@ -334,6 +334,10 @@
       </div>
       <div id="music-body" class="hidden stack">
         <div class="item" style="padding-left:0">
+          <span class="grow meta" id="bot-name">机器人昵称：…</span>
+          <button class="btn-outline btn-sm" id="btn-bot-rename">改名</button>
+        </div>
+        <div class="item" style="padding-left:0">
           <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
           <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
           <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
@@ -483,6 +487,8 @@ async function refreshBot() {
     show($('music-body'), true);
     $('now-playing').textContent = s.current ? '♪ ' + s.current.name + ' - ' + s.current.artist : '没有正在播放的歌曲';
     $('now-playing').className = 'title' + (s.current ? ' playing' : '');
+    $('bot-name').textContent = '机器人昵称：' + (s.nickname || '点歌姬');
+    $('bot-name').dataset.name = s.nickname || '';
     $('player-notice').textContent = s.notice || '';
     show($('player-notice'), !!s.notice);
     if (!volDragging) { $('vol').value = s.volume; $('vol-num').textContent = s.volume; }
@@ -518,6 +524,16 @@ $('btn-bot-start').onclick = async () => {
     setTimeout(refreshBot, 2000);
   } catch (e) { setMsg($('msg'), e.message, true); }
   finally { $('btn-bot-start').disabled = false; }
+};
+
+$('btn-bot-rename').onclick = async () => {
+  const name = prompt('机器人的新昵称（1-20 字符）：', $('bot-name').dataset.name || '');
+  if (!name || !name.trim()) return;
+  try {
+    const r = await api('/api/bot/nickname', { name: name.trim() });
+    setMsg($('msg'), r.message, false);
+    refreshBot();
+  } catch (e) { setMsg($('msg'), e.message, true); }
 };
 
 $('btn-bot-off').onclick = async () => {

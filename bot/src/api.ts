@@ -3,7 +3,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { search, playlist, qrStart, qrCheck, profile, logout } from "./netease.js";
 import type { Player } from "./player.js";
 import type { TSClient } from "./ts-client.js";
-import type { BotConfig } from "./config.js";
+import { saveConfig, type BotConfig } from "./config.js";
+
+// 昵称上限 20 字符:TS 全名上限 30,给「♪歌名」留出空间
+const NICKNAME_BASE_MAX = 20;
 
 export function startAPI(config: BotConfig, ts: TSClient, player: Player): void {
   const server = createServer((req, res) => {
@@ -21,8 +24,20 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
       case "GET /status":
         return send(res, 200, {
           success: true,
-          data: { connected: ts.connected, ...player.status() },
+          data: { connected: ts.connected, nickname: config.nickname, ...player.status() },
         });
+      case "POST /nickname": {
+        const { name } = await body(req);
+        const trimmed = String(name ?? "").trim();
+        if (!trimmed || [...trimmed].length > NICKNAME_BASE_MAX) {
+          return send(res, 400, { success: false, error: `昵称需为 1-${NICKNAME_BASE_MAX} 个字符` });
+        }
+        config.nickname = trimmed;
+        // 在线则立即改名(播放中带歌名),离线则下次连接生效;先应用再落盘
+        await ts.setNowPlaying(player.status().current?.name ?? null);
+        saveConfig(config);
+        return send(res, 200, { success: true, data: { message: `机器人已改名「${trimmed}」` } });
+      }
       case "POST /search": {
         const { keyword } = await body(req);
         if (!keyword) return send(res, 400, { success: false, error: "缺少关键词" });

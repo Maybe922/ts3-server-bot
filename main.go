@@ -22,7 +22,7 @@ import (
 var webFS embed.FS
 
 const (
-	version    = "0.3.5"
+	version    = "0.3.6"
 	cookieName = "ts3panel_session"
 	queryAddr  = "127.0.0.1:10011"
 )
@@ -88,6 +88,7 @@ func main() {
 	mux.HandleFunc("POST /api/bot/skip", s.requireAuth(s.botForward("POST", "/skip")))
 	mux.HandleFunc("POST /api/bot/stop", s.requireAuth(s.botForward("POST", "/stop")))
 	mux.HandleFunc("POST /api/bot/volume", s.requireAuth(s.botForward("POST", "/volume")))
+	mux.HandleFunc("POST /api/bot/nickname", s.requireAuth(s.botForward("POST", "/nickname")))
 	mux.HandleFunc("POST /api/bot/netease/qr/start", s.requireAuth(s.botForward("POST", "/netease/qr/start")))
 	mux.HandleFunc("POST /api/bot/netease/qr/check", s.requireAuth(s.botForward("POST", "/netease/qr/check")))
 	mux.HandleFunc("GET /api/bot/netease/profile", s.requireAuth(s.botForward("GET", "/netease/profile")))

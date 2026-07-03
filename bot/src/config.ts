@@ -43,4 +43,9 @@ export function loadConfig(): BotConfig {
   return config;
 }
 
+/** 把当前配置落盘（改名等运行时修改后调用）。 */
+export function saveConfig(config: BotConfig): void {
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
 export const dataDir = DATA_DIR;
