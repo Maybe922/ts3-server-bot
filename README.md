@@ -1,7 +1,18 @@
 # TS3 Panel — TeamSpeak 3 一键部署与管理面板
 
-给"愿意买 VPS 但不会搭服务器"的开黑玩家：一条命令装好 TeamSpeak 3 服务器，
-之后全程在浏览器里管理，内置 Bot，对国内网络友好。
+给"愿意买 VPS 但不会搭服务器"的开黑玩家：一条命令装好 TeamSpeak 3 服务器 + 点歌机器人，
+之后全程在浏览器里管理，对国内网络友好。
+
+## 快速开始
+
+在一台干净的 Ubuntu/Debian VPS 上（root）执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Maybe922/ts3-server-bot/main/scripts/install.sh | sudo bash
+```
+
+然后浏览器打开 `http://你的IP:8090`，按界面引导操作。
+记得在云控制台放行端口：TCP 8090（面板）、UDP 9987（语音）、TCP 30033（文件传输）。
 
 ## 为什么做这个
 
