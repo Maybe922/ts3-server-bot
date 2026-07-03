@@ -1,0 +1,4 @@
+bot/node_modules/
+bot/dist/
+bot/data/
+bot/bot.log
