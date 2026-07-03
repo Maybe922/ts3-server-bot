@@ -16,7 +16,7 @@ await ts.start();
 
 async function shutdown(): Promise<void> {
   console.log("正在退出…");
-  player.stopAll();
+  player.shutdown(); // 保留队列落盘,重启后可恢复
   await ts.stop();
   process.exit(0);
 }

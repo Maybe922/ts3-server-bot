@@ -1,6 +1,6 @@
 {
   "name": "ts3panel-bot",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "TS3 Panel 内置点歌机器人",
   "type": "module",
   "private": true,

@@ -2,10 +2,13 @@
 // 管线：音源 URL → ffmpeg(转 48kHz 双声道 PCM) → 按帧切分 → 音量增益 → Opus → TS 语音包
 import { spawn, type ChildProcess } from "node:child_process";
 import { Readable } from "node:stream";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import opusModule from "@discordjs/opus";
 import ffmpegPath from "ffmpeg-static";
 import { streamUrl, coverImage, type Track } from "./netease.js";
 import type { TSClient } from "./ts-client.js";
+import { dataDir } from "./config.js";
 
 const { OpusEncoder } = opusModule;
 
@@ -18,6 +21,10 @@ const PUMP_INTERVAL_MS = 5;
 
 // 上一首回溯上限
 const HISTORY_MAX = 50;
+// 音频断流超过该时长视为卡死，自动跳下一首
+const STALL_TIMEOUT_MS = 20_000;
+// 队列落盘，机器人重启后不丢
+const QUEUE_FILE = join(dataDir, "queue.json");
 
 export interface PlayerStatus {
   playing: boolean;
@@ -42,6 +49,7 @@ export class Player {
   private download: Readable | null = null;
   private pcmBuffer: Buffer = Buffer.alloc(0);
   private ffmpegDone = false;
+  private stalledSince = 0;
   private nextFrameAt = 0;
   private pump: ReturnType<typeof setInterval> | null = null;
   private notice: string | null = null;
@@ -50,6 +58,31 @@ export class Player {
 
   constructor(ts: TSClient) {
     this.ts = ts;
+    this.restoreQueue();
+  }
+
+  /** 启动时恢复上次的队列（不自动开播，由用户按 ⏭ 开始）。 */
+  private restoreQueue(): void {
+    try {
+      if (!existsSync(QUEUE_FILE)) {
+        return;
+      }
+      const saved: unknown = JSON.parse(readFileSync(QUEUE_FILE, "utf8"));
+      if (Array.isArray(saved) && saved.length > 0) {
+        this.queue = saved as Track[];
+        this.notice = `已恢复上次的队列（${saved.length} 首），点 ⏭ 开始播放`;
+      }
+    } catch {
+      // 队列缓存损坏就从空队列开始
+    }
+  }
+
+  private persistQueue(): void {
+    try {
+      writeFileSync(QUEUE_FILE, JSON.stringify(this.queue));
+    } catch {
+      // 落盘失败不影响播放
+    }
   }
 
   status(): PlayerStatus {
@@ -67,6 +100,7 @@ export class Player {
   /** 点歌：入队，空闲则立即开播。 */
   async enqueue(track: Track): Promise<void> {
     this.queue.push(track);
+    this.persistQueue();
     if (!this.current) {
       await this.playNext();
     }
@@ -75,6 +109,7 @@ export class Player {
   /** 整单入队（歌单），空闲则立即开播。 */
   async enqueueMany(tracks: Track[]): Promise<void> {
     this.queue.push(...tracks);
+    this.persistQueue();
     if (!this.current) {
       await this.playNext();
     }
@@ -90,6 +125,7 @@ export class Player {
       return null;
     }
     const [removed] = this.queue.splice(at, 1);
+    this.persistQueue();
     return removed;
   }
 
@@ -99,6 +135,7 @@ export class Player {
       const j = Math.floor(Math.random() * (i + 1));
       [this.queue[i], this.queue[j]] = [this.queue[j], this.queue[i]];
     }
+    this.persistQueue();
   }
 
   /** 下一首（playNext 内部会先收掉当前曲并记入历史）。 */
@@ -133,8 +170,18 @@ export class Player {
     this.nextFrameAt = Date.now(); // 重置节拍，防止恢复瞬间追帧爆发
   }
 
+  /** 进程退出前的收尾：正在播的歌塞回队首并落盘，重启后可从这里继续。 */
+  shutdown(): void {
+    if (this.current) {
+      this.queue.unshift(this.current);
+      this.persistQueue();
+    }
+    this.stopCurrent();
+  }
+
   stopAll(): void {
     this.queue = [];
+    this.persistQueue();
     this.notice = null;
     this.paused = false;
     this.stopCurrent();
@@ -152,6 +199,7 @@ export class Player {
     this.stopCurrent();
     this.paused = false;
     const track = this.queue.shift();
+    this.persistQueue();
     if (!track) {
       void this.ts.clearAvatar().catch(() => {});
       void this.ts.setNowPlaying(null).catch(() => {});
@@ -196,6 +244,7 @@ export class Player {
   private startFfmpeg(source: ReadableStream<Uint8Array>): void {
     this.pcmBuffer = Buffer.alloc(0);
     this.ffmpegDone = false;
+    this.stalledSince = 0;
     const ff = spawn(ffmpegPath as unknown as string, [
       "-loglevel", "quiet",
       "-i", "pipe:0",
@@ -234,6 +283,7 @@ export class Player {
   /** 按 20ms 节拍送帧，时间戳对齐避免累计漂移。 */
   private pumpFrames(): void {
     if (this.paused) {
+      this.stalledSince = 0;
       return;
     }
     const now = Date.now();
@@ -246,12 +296,22 @@ export class Player {
         }
         this.ts.sendOpusFrame(this.encoder.encode(this.applyGain(pcm)));
         this.nextFrameAt += FRAME_MS;
+        this.stalledSince = 0;
       } else if (this.ffmpegDone) {
         // 播完了，进下一首
         void this.playNext();
         return;
       } else {
-        // 网络卡了缓冲不足：等下一轮，重置节拍防止追帧爆发
+        // 缓冲不足：短暂网络抖动就等下一轮；断流过久则视为卡死，弃曲跳下一首
+        if (this.stalledSince === 0) {
+          this.stalledSince = now;
+        } else if (now - this.stalledSince > STALL_TIMEOUT_MS) {
+          const name = this.current?.name ?? "";
+          console.error(`「${name}」音频流断流超过 ${STALL_TIMEOUT_MS / 1000}s，跳到下一首`);
+          this.notice = `「${name}」网络卡住，已自动跳到下一首`;
+          void this.playNext();
+          return;
+        }
         this.nextFrameAt = now + FRAME_MS;
         return;
       }
