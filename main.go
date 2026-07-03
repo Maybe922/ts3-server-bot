@@ -368,7 +368,7 @@ func (s *server) handleBotSvcStart(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusInternalServerError, nil, err.Error())
 		return
 	}
-	respond(w, http.StatusOK, map[string]string{"message": "机器人已启动"}, "")
+	respond(w, http.StatusOK, map[string]string{"message": "机器人已启用，几秒后会自动进入服务器"}, "")
 }
 
 func (s *server) handleBotSvcStop(w http.ResponseWriter, r *http.Request) {
@@ -376,7 +376,7 @@ func (s *server) handleBotSvcStop(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusInternalServerError, nil, err.Error())
 		return
 	}
-	respond(w, http.StatusOK, map[string]string{"message": "机器人已停止"}, "")
+	respond(w, http.StatusOK, map[string]string{"message": "机器人已停用，不会再自动进入服务器"}, "")
 }
 
 func (s *server) handleChannelDelete(w http.ResponseWriter, r *http.Request) {

@@ -26,13 +26,14 @@ func State() ServiceState {
 	return ServiceState{Managed: true, Running: running}
 }
 
-func StartService() error { return systemctl("start") }
-func StopService() error  { return systemctl("stop") }
+// 启停同时切换开机自启:用户"要不要机器人"的选择要在重启后依然生效。
+func StartService() error { return systemctl("enable", "--now") }
+func StopService() error  { return systemctl("disable", "--now") }
 
-func systemctl(action string) error {
-	out, err := exec.Command("systemctl", action, serviceName).CombinedOutput()
+func systemctl(args ...string) error {
+	out, err := exec.Command("systemctl", append(args, serviceName)...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl %s 失败: %s", action, strings.TrimSpace(string(out)))
+		return fmt.Errorf("systemctl %s 失败: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}
 	return nil
 }

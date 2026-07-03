@@ -113,10 +113,10 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+# 机器人只注册不启动:要不要点歌机器人由用户在面板里自己选择
 chown -R "${RUN_USER}:${RUN_USER}" "${BASE_DIR}"
 systemctl daemon-reload
 systemctl enable --now ts3panel
-[ "${BOT_INSTALLED}" -eq 1 ] && systemctl enable --now tsmusicbot
 
 PUBLIC_IP=$(curl -fsSL --max-time 5 https://ipinfo.io/ip 2>/dev/null || hostname -I | awk '{print $1}')
 echo ""
@@ -125,4 +125,4 @@ info "接下来:"
 info "  1. 在云控制台防火墙/安全组放行: TCP ${PANEL_PORT}(面板)、UDP 9987(语音)、TCP 30033(文件传输)"
 info "  2. 浏览器打开: http://${PUBLIC_IP}:${PANEL_PORT}"
 info "  3. 设置面板密码 → 同意协议安装 TS3 服务器 → 启动 → 开黑!"
-[ "${BOT_INSTALLED}" -eq 1 ] && info "  点歌机器人已就位,服务器启动后它会自动连入,在面板点歌台直接点歌"
+[ "${BOT_INSTALLED}" -eq 1 ] && info "  点歌机器人已装好但默认关闭,想要的话在面板「点歌台」一键启用"

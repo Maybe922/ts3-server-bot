@@ -216,7 +216,8 @@
   }
   .modal h3 { font-size: 1rem; }
   .modal img { width: 190px; height: 190px; border-radius: 12px; background: #fff; padding: 8px; }
-  .modal .hint { color: var(--text-dim); font-size: .875rem; }
+  .hint { color: var(--text-dim); font-size: .875rem; margin-bottom: .75rem; }
+  .modal .hint { margin-bottom: 0; }
 
   .hidden { display: none !important; }
   .stack { display: flex; flex-direction: column; gap: 1rem; }
@@ -325,8 +326,11 @@
     <!-- 点歌台 -->
     <hr class="divider">
     <section id="music">
-      <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未运行</span></h2>
-      <button class="btn-primary btn-block hidden" id="btn-bot-start">启动点歌机器人</button>
+      <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未启用</span> <button class="btn-ghost btn-sm hidden" id="btn-bot-off">停用机器人</button></h2>
+      <div id="bot-offer" class="hidden">
+        <p class="hint">点歌机器人是可选的：启用后「点歌姬」会自动进入你的服务器，随时可以停用。</p>
+        <button class="btn-primary btn-block" id="btn-bot-start">启用点歌机器人</button>
+      </div>
       <div id="music-body" class="hidden stack">
         <div class="item" style="padding-left:0">
           <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
@@ -487,27 +491,40 @@ async function refreshBot() {
     });
     if (s.queue.length > SHOWN) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '…队列中还有 ' + (s.queue.length - SHOWN) + ' 首，共 ' + s.queue.length + ' 首'; q.appendChild(d); }
     if (first) refreshNetease();
-    show($('btn-bot-start'), false);
+    show($('bot-offer'), false);
+    show($('btn-bot-off'), true);
   } catch {
-    chip($('bot-chip'), 'off', '未运行');
+    chip($('bot-chip'), 'off', '未启用');
     show($('music-body'), false);
-    // Bot 由 systemd 托管但没在跑 → 给出一键启动
+    // Bot 已装好但没在跑 → 给出可选的一键启用;正在跑但接口还没就绪 → 保留停用入口
     try {
       const svc = await api('/api/bot/svc');
-      show($('btn-bot-start'), svc.managed && !svc.running);
-    } catch { show($('btn-bot-start'), false); }
+      show($('bot-offer'), svc.managed && !svc.running);
+      show($('btn-bot-off'), svc.managed && svc.running);
+    } catch { show($('bot-offer'), false); show($('btn-bot-off'), false); }
   }
 }
 
 $('btn-bot-start').onclick = async () => {
   $('btn-bot-start').disabled = true;
-  setMsg($('msg'), '正在启动机器人…', false);
+  setMsg($('msg'), '正在启用机器人…', false);
   try {
     const r = await api('/api/bot/svc/start', {});
     setMsg($('msg'), r.message, false);
     setTimeout(refreshBot, 2000);
   } catch (e) { setMsg($('msg'), e.message, true); }
   finally { $('btn-bot-start').disabled = false; }
+};
+
+$('btn-bot-off').onclick = async () => {
+  $('btn-bot-off').disabled = true;
+  setMsg($('msg'), '正在停用机器人…', false);
+  try {
+    const r = await api('/api/bot/svc/stop', {});
+    setMsg($('msg'), r.message, false);
+    setTimeout(refreshBot, 1000);
+  } catch (e) { setMsg($('msg'), e.message, true); }
+  finally { $('btn-bot-off').disabled = false; }
 };
 
 async function refreshNetease() {
