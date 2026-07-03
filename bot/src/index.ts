@@ -7,11 +7,12 @@ const config = loadConfig();
 const ts = new TSClient(config);
 const player = new Player(ts);
 
-startAPI(config, ts, player);
-await ts.start();
-
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+startAPI(config, ts, player);
+// start() 是常驻守护循环，正常情况下不返回
+await ts.start();
 
 async function shutdown(): Promise<void> {
   console.log("正在退出…");

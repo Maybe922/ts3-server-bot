@@ -32,42 +32,49 @@ export class TSClient {
     return this.client !== null;
   }
 
+  /** 单一守护循环：连接 → 驻留至断开 → 等待 → 重连。
+   * 永不静默退出；任何路径的失败都会释放连接并进入下一轮。 */
   async start(): Promise<void> {
     this.stopped = false;
-    await this.connectLoop();
-  }
-
-  private async connectLoop(): Promise<void> {
     while (!this.stopped) {
       try {
-        await this.connectOnce();
-        return;
+        await this.runSession();
       } catch (err) {
         console.error(`连接失败: ${(err as Error).message}，${RECONNECT_DELAY_MS / 1000}s 后重试`);
+      }
+      if (!this.stopped) {
         await sleep(RECONNECT_DELAY_MS);
       }
     }
   }
 
-  private async connectOnce(): Promise<void> {
+  /** 建立一次连接并驻留，直到断开才返回。 */
+  private async runSession(): Promise<void> {
     const { serverHost, serverPort, nickname, defaultChannel } = this.config;
     const addr = serverPort === 9987 ? serverHost : `${serverHost}:${serverPort}`;
     const client = new Client(loadIdentity(), addr, nickname, {
       defaultChannel: defaultChannel || undefined,
     });
 
-    client.on("disconnected", (err) => {
-      console.error(`连接断开: ${err?.message ?? "正常下线"}`);
-      this.client = null;
-      if (!this.stopped) {
-        void this.connectLoop();
-      }
+    // 断开信号：无论发生在握手期还是稳定期，都由本循环统一收尾
+    const ended = new Promise<void>((resolve) => {
+      client.on("disconnected", (err) => {
+        console.error(`连接断开: ${err?.message ?? "正常下线"}`);
+        resolve();
+      });
     });
 
-    await client.connect();
-    await client.waitConnected(AbortSignal.timeout(15_000));
+    try {
+      await client.connect();
+      await client.waitConnected(AbortSignal.timeout(15_000));
+    } catch (err) {
+      await client.disconnect().catch(() => {}); // 释放失败连接的套接字
+      throw err;
+    }
     this.client = client;
     console.log(`已连接 ${addr}，昵称「${nickname}」`);
+    await ended; // 驻留至断开
+    this.client = null;
   }
 
   /** 发送一帧 20ms 的 Opus 音频。未连接时静默丢弃。 */
