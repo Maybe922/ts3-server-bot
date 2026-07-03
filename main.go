@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"ts3panel/internal/auth"
+	"ts3panel/internal/query"
 	"ts3panel/internal/tsserver"
 )
 
@@ -17,8 +18,9 @@ import (
 var webFS embed.FS
 
 const (
-	version    = "0.1.0-dev"
+	version    = "0.2.0-dev"
 	cookieName = "ts3panel_session"
+	queryAddr  = "127.0.0.1:10011"
 )
 
 type server struct {
@@ -53,6 +55,14 @@ func main() {
 	mux.HandleFunc("POST /api/server/install", s.requireAuth(s.handleInstall))
 	mux.HandleFunc("POST /api/server/start", s.requireAuth(s.handleStart))
 	mux.HandleFunc("POST /api/server/stop", s.requireAuth(s.handleStop))
+	// 运维接口（ServerQuery）
+	mux.HandleFunc("GET /api/ts/overview", s.requireAuth(s.handleOverview))
+	mux.HandleFunc("POST /api/ts/rename", s.requireAuth(s.handleRename))
+	mux.HandleFunc("GET /api/ts/clients", s.requireAuth(s.handleClients))
+	mux.HandleFunc("POST /api/ts/kick", s.requireAuth(s.handleKick))
+	mux.HandleFunc("GET /api/ts/channels", s.requireAuth(s.handleChannels))
+	mux.HandleFunc("POST /api/ts/channels/create", s.requireAuth(s.handleChannelCreate))
+	mux.HandleFunc("POST /api/ts/channels/delete", s.requireAuth(s.handleChannelDelete))
 
 	log.Printf("ts3panel %s 已启动，监听 %s，数据目录 %s", version, *addr, *dataDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -199,4 +209,103 @@ func (s *server) handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, map[string]string{"message": "已停止"}, "")
+}
+
+// querySession 建立一条已登录的 ServerQuery 会话，调用方负责 Close。
+func (s *server) querySession() (*query.Session, error) {
+	if !s.ts.Running() {
+		return nil, errors.New("TS3 服务器未在运行")
+	}
+	creds, ok := s.ts.LoadCredentials()
+	if !ok {
+		return nil, errors.New("尚未获取到 Query 凭据，请先启动一次服务器")
+	}
+	return query.Connect(queryAddr, creds.QueryUser, creds.QueryPassword)
+}
+
+// withQuery 处理会话建立/关闭的样板，把业务逻辑收敛到回调里。
+func (s *server) withQuery(w http.ResponseWriter, fn func(*query.Session) (any, error)) {
+	sess, err := s.querySession()
+	if err != nil {
+		respond(w, http.StatusServiceUnavailable, nil, err.Error())
+		return
+	}
+	defer sess.Close()
+	data, err := fn(sess)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, nil, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, data, "")
+}
+
+func (s *server) handleOverview(w http.ResponseWriter, r *http.Request) {
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return sess.Overview()
+	})
+}
+
+func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		respond(w, http.StatusBadRequest, nil, "服务器名称不能为空")
+		return
+	}
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return map[string]string{"message": "已改名"}, sess.Rename(req.Name)
+	})
+}
+
+func (s *server) handleClients(w http.ResponseWriter, r *http.Request) {
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return sess.Clients()
+	})
+}
+
+func (s *server) handleKick(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ClientID int    `json:"clientId"`
+		Reason   string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ClientID <= 0 {
+		respond(w, http.StatusBadRequest, nil, "无效的用户 ID")
+		return
+	}
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return map[string]string{"message": "已踢出"}, sess.Kick(req.ClientID, req.Reason)
+	})
+}
+
+func (s *server) handleChannels(w http.ResponseWriter, r *http.Request) {
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return sess.Channels()
+	})
+}
+
+func (s *server) handleChannelCreate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		respond(w, http.StatusBadRequest, nil, "频道名称不能为空")
+		return
+	}
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return map[string]string{"message": "频道已创建"}, sess.CreateChannel(req.Name)
+	})
+}
+
+func (s *server) handleChannelDelete(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ChannelID int `json:"channelId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChannelID <= 0 {
+		respond(w, http.StatusBadRequest, nil, "无效的频道 ID")
+		return
+	}
+	s.withQuery(w, func(sess *query.Session) (any, error) {
+		return map[string]string{"message": "频道已删除"}, sess.DeleteChannel(req.ChannelID)
+	})
 }

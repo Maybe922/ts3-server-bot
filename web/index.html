@@ -34,6 +34,29 @@
     padding: 2.5rem;
     width: min(34rem, 94vw);
   }
+  #view-main { width: min(44rem, 94vw); }
+  section.ops { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem; }
+  section.ops h2 { font-size: 0.9375rem; margin-bottom: 1rem; color: var(--text-dim); font-weight: 600; }
+  .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.9375rem; gap: 1rem;
+  }
+  .row:hover { background: var(--bg); }
+  .row .meta { color: var(--text-dim); font-size: 0.8125rem; white-space: nowrap; }
+  .row .grow { flex: 1; overflow-wrap: anywhere; }
+  .row button { padding: 0.25rem 0.75rem; font-size: 0.8125rem; }
+  .inline-form { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+  .inline-form input[type=text] {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.875rem; flex: 1;
+  }
+  .inline-form input[type=text]:focus { outline: 0; border-color: var(--accent); }
+  .stats { display: flex; gap: 2rem; margin-top: 0.75rem; }
+  .stat .num { font-size: 1.5rem; font-weight: 700; }
+  .stat .lbl { font-size: 0.75rem; color: var(--text-dim); }
+  .servername { display: flex; align-items: baseline; gap: 0.75rem; }
+  .servername strong { font-size: 1.0625rem; overflow-wrap: anywhere; }
+  .empty { color: var(--text-dim); font-size: 0.875rem; padding: 0.5rem 0.75rem; }
   h1 { font-size: 1.25rem; margin-bottom: 0.375rem; }
   h1 span { color: var(--accent); }
   .sub { color: var(--text-dim); font-size: 0.875rem; margin-bottom: 2rem; }
@@ -134,6 +157,34 @@
     <p class="msg" id="msg"></p>
   </div>
 
+  <!-- 运维区：仅服务器运行中显示 -->
+  <section class="ops hidden" id="ops-overview">
+    <h2>服务器概览</h2>
+    <div class="servername">
+      <strong id="ov-name">…</strong>
+      <button class="ghost" id="btn-rename">改名</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num" id="ov-online">-</div><div class="lbl">在线人数</div></div>
+      <div class="stat"><div class="num" id="ov-max">-</div><div class="lbl">人数上限</div></div>
+      <div class="stat"><div class="num" id="ov-uptime">-</div><div class="lbl">运行时间</div></div>
+    </div>
+  </section>
+
+  <section class="ops hidden" id="ops-channels">
+    <h2>频道</h2>
+    <div id="channel-list"></div>
+    <div class="inline-form">
+      <input type="text" id="new-channel" placeholder="新频道名称" maxlength="40">
+      <button id="btn-add-channel">创建</button>
+    </div>
+  </section>
+
+  <section class="ops hidden" id="ops-clients">
+    <h2>在线用户</h2>
+    <div id="client-list"></div>
+  </section>
+
   <div class="creds hidden" id="creds">
     <h2>⚠ 管理凭据（请妥善保存）</h2>
     <p>连接地址：<code id="c-addr">…</code></p>
@@ -200,10 +251,94 @@ async function refresh() {
       $('c-user').textContent = s.credentials.queryUser;
       $('c-pass').textContent = s.credentials.queryPassword;
     }
+    ['ops-overview', 'ops-channels', 'ops-clients'].forEach(id => show($(id), s.serverRunning));
+    if (s.serverRunning) refreshOps();
   } catch (e) {
     if (e.message !== '未登录') setMsg($('msg'), e.message, true);
   }
 }
+
+function fmtUptime(sec) {
+  if (sec < 3600) return Math.floor(sec / 60) + ' 分钟';
+  if (sec < 86400) return (sec / 3600).toFixed(1) + ' 小时';
+  return (sec / 86400).toFixed(1) + ' 天';
+}
+
+// textContent 赋值，杜绝把服务器返回的名字当 HTML 解析
+function renderRows(container, items, render) {
+  container.replaceChildren();
+  if (!items.length) {
+    const div = document.createElement('div');
+    div.className = 'empty';
+    div.textContent = container.id === 'client-list' ? '当前没有人在线' : '暂无频道';
+    container.appendChild(div);
+    return;
+  }
+  items.forEach(item => container.appendChild(render(item)));
+}
+
+function makeRow(name, meta, btnText, onClick) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const grow = document.createElement('span');
+  grow.className = 'grow';
+  grow.textContent = name;
+  const metaEl = document.createElement('span');
+  metaEl.className = 'meta';
+  metaEl.textContent = meta;
+  const btn = document.createElement('button');
+  btn.className = 'secondary';
+  btn.textContent = btnText;
+  btn.onclick = onClick;
+  row.append(grow, metaEl, btn);
+  return row;
+}
+
+async function refreshOps() {
+  try {
+    const [ov, channels, clients] = await Promise.all([
+      api('/api/ts/overview'), api('/api/ts/channels'), api('/api/ts/clients'),
+    ]);
+    $('ov-name').textContent = ov.name;
+    $('ov-online').textContent = ov.clientsOnline;
+    $('ov-max').textContent = ov.maxClients;
+    $('ov-uptime').textContent = fmtUptime(ov.uptimeSeconds);
+
+    renderRows($('channel-list'), channels, ch =>
+      makeRow(ch.name, ch.clients + ' 人', '删除', async () => {
+        if (!confirm('删除频道「' + ch.name + '」？')) return;
+        try { await api('/api/ts/channels/delete', { channelId: ch.id }); refreshOps(); }
+        catch (e) { setMsg($('msg'), e.message, true); }
+      }));
+
+    renderRows($('client-list'), clients, c =>
+      makeRow(c.nickname, 'ID ' + c.id, '踢出', async () => {
+        if (!confirm('把「' + c.nickname + '」踢出服务器？')) return;
+        try { await api('/api/ts/kick', { clientId: c.id, reason: '管理员操作' }); refreshOps(); }
+        catch (e) { setMsg($('msg'), e.message, true); }
+      }));
+  } catch (e) {
+    if (e.message !== '未登录') setMsg($('msg'), e.message, true);
+  }
+}
+
+$('btn-rename').onclick = async () => {
+  const name = prompt('新的服务器名称：', $('ov-name').textContent);
+  if (!name) return;
+  try { await api('/api/ts/rename', { name }); refreshOps(); }
+  catch (e) { setMsg($('msg'), e.message, true); }
+};
+
+$('btn-add-channel').onclick = async () => {
+  const name = $('new-channel').value.trim();
+  if (!name) return;
+  try {
+    await api('/api/ts/channels/create', { name });
+    $('new-channel').value = '';
+    refreshOps();
+  } catch (e) { setMsg($('msg'), e.message, true); }
+};
+$('new-channel').onkeydown = e => { if (e.key === 'Enter') $('btn-add-channel').click(); };
 
 async function action(btn, path, body, pending) {
   btn.disabled = true;
