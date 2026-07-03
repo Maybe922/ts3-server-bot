@@ -16,8 +16,14 @@ const PCM_FRAME_BYTES = (SAMPLE_RATE / 1000) * FRAME_MS * CHANNELS * 2; // 3840
 // 帧泵空转间隔：小于帧长，用时间戳对齐防漂移
 const PUMP_INTERVAL_MS = 5;
 
+// 上一首回溯上限
+const HISTORY_MAX = 50;
+
 export interface PlayerStatus {
   playing: boolean;
+  paused: boolean;
+  /** 是否有可回退的上一首 */
+  hasPrevious: boolean;
   current: Track | null;
   queue: Track[];
   volume: number;
@@ -29,7 +35,9 @@ export class Player {
   private ts: TSClient;
   private encoder = new OpusEncoder(SAMPLE_RATE, CHANNELS);
   private queue: Track[] = [];
+  private history: Track[] = [];
   private current: Track | null = null;
+  private paused = false;
   private ffmpeg: ChildProcess | null = null;
   private download: Readable | null = null;
   private pcmBuffer: Buffer = Buffer.alloc(0);
@@ -47,6 +55,8 @@ export class Player {
   status(): PlayerStatus {
     return {
       playing: this.current !== null,
+      paused: this.paused,
+      hasPrevious: this.history.length > 0,
       current: this.current,
       queue: [...this.queue],
       volume: this.volume,
@@ -78,21 +88,56 @@ export class Player {
     }
   }
 
+  /** 下一首（playNext 内部会先收掉当前曲并记入历史）。 */
   async skip(): Promise<void> {
-    this.stopCurrent();
     await this.playNext();
+  }
+
+  /** 上一首：当前曲退回队首，从历史里取最近一首重播。 */
+  async previous(): Promise<void> {
+    const prev = this.history.pop();
+    if (!prev) {
+      this.notice = "没有上一首了";
+      return;
+    }
+    if (this.current) {
+      this.queue.unshift(this.current);
+    }
+    this.queue.unshift(prev);
+    this.stopCurrent(); // 先收掉当前曲，playNext 就不会把它再记入历史
+    await this.playNext();
+  }
+
+  /** 暂停：停住发帧节拍，听众侧静音挂起；缓冲由背压自动扼住。 */
+  pause(): void {
+    if (this.current) {
+      this.paused = true;
+    }
+  }
+
+  resume(): void {
+    this.paused = false;
+    this.nextFrameAt = Date.now(); // 重置节拍，防止恢复瞬间追帧爆发
   }
 
   stopAll(): void {
     this.queue = [];
     this.notice = null;
+    this.paused = false;
     this.stopCurrent();
     void this.ts.clearAvatar().catch(() => {});
     void this.ts.setNowPlaying(null).catch(() => {});
   }
 
   private async playNext(): Promise<void> {
+    if (this.current) {
+      this.history.push(this.current);
+      if (this.history.length > HISTORY_MAX) {
+        this.history.shift();
+      }
+    }
     this.stopCurrent();
+    this.paused = false;
     const track = this.queue.shift();
     if (!track) {
       void this.ts.clearAvatar().catch(() => {});
@@ -175,6 +220,9 @@ export class Player {
 
   /** 按 20ms 节拍送帧，时间戳对齐避免累计漂移。 */
   private pumpFrames(): void {
+    if (this.paused) {
+      return;
+    }
     const now = Date.now();
     while (now >= this.nextFrameAt) {
       if (this.pcmBuffer.length >= PCM_FRAME_BYTES) {

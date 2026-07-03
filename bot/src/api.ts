@@ -65,7 +65,16 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
         return send(res, 200, { success: true, data: { message: "队列已打乱" } });
       case "POST /skip":
         await player.skip();
-        return send(res, 200, { success: true, data: { message: "已切歌" } });
+        return send(res, 200, { success: true, data: { message: "已切到下一首" } });
+      case "POST /previous":
+        await player.previous();
+        return send(res, 200, { success: true, data: { message: "已回到上一首" } });
+      case "POST /pause":
+        player.pause();
+        return send(res, 200, { success: true, data: { message: "已暂停" } });
+      case "POST /resume":
+        player.resume();
+        return send(res, 200, { success: true, data: { message: "继续播放" } });
       case "POST /stop":
         player.stopAll();
         return send(res, 200, { success: true, data: { message: "已停止" } });

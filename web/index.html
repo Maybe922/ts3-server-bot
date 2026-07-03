@@ -151,6 +151,9 @@
   .btn-danger { background: transparent; color: var(--text-dim); border-color: var(--border); }
   .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
   .btn-sm { padding: .3rem .7rem; font-size: .8125rem; border-radius: 8px; }
+  .ctrl { width: 2.4rem; padding: .3rem 0; text-align: center; font-size: .9375rem; line-height: 1.4; }
+  .ctrl:disabled { opacity: .35; cursor: not-allowed; }
+  .ctrl:disabled:hover { border-color: var(--border); color: var(--text); }
   .btn-block { width: 100%; }
 
   /* Inputs */
@@ -359,7 +362,9 @@
         </div>
         <div class="now">
           <span class="title" id="now-playing">没有正在播放的歌曲</span>
-          <button class="btn-outline btn-sm" id="btn-skip">切歌</button>
+          <button class="btn-outline btn-sm ctrl" id="btn-prev" title="上一首">⏮</button>
+          <button class="btn-outline btn-sm ctrl" id="btn-pause" title="暂停 / 继续">⏸</button>
+          <button class="btn-outline btn-sm ctrl" id="btn-skip" title="下一首">⏭</button>
           <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
         </div>
         <p class="notice hidden" id="player-notice"></p>
@@ -502,8 +507,14 @@ async function refreshBot() {
     else chip($('bot-chip'), 'warn', '已启动，未连上服务器');
     const first = $('music-body').classList.contains('hidden');
     show($('music-body'), true);
-    $('now-playing').textContent = s.current ? '♪ ' + s.current.name + ' - ' + s.current.artist : '没有正在播放的歌曲';
-    $('now-playing').className = 'title' + (s.current ? ' playing' : '');
+    $('now-playing').textContent = s.current
+      ? (s.paused ? '⏸ ' : '♪ ') + s.current.name + ' - ' + s.current.artist
+      : '没有正在播放的歌曲';
+    $('now-playing').className = 'title' + (s.current && !s.paused ? ' playing' : '');
+    $('btn-pause').textContent = s.paused ? '▶' : '⏸';
+    $('btn-pause').dataset.paused = s.paused ? '1' : '';
+    $('btn-pause').disabled = !s.current;
+    $('btn-prev').disabled = !s.hasPrevious;
     $('bot-name').textContent = '机器人昵称：' + (s.nickname || '点歌姬');
     $('bot-name').dataset.name = s.nickname || '';
     $('player-notice').textContent = s.notice || '';
@@ -636,6 +647,12 @@ $('btn-playlist').onclick = async () => {
 $('playlist-input').onkeydown = e => { if (e.key === 'Enter') $('btn-playlist').click(); };
 $('btn-shuffle').onclick = async () => { try { const r = await api('/api/bot/shuffle', {}); setMsg($('msg'), r.message, false); refreshBot(); } catch (e) { setMsg($('msg'), e.message, true); } };
 $('btn-skip').onclick = async () => { try { await api('/api/bot/skip', {}); refreshBot(); } catch (e) { setMsg($('msg'), e.message, true); } };
+$('btn-prev').onclick = async () => { try { await api('/api/bot/previous', {}); refreshBot(); } catch (e) { setMsg($('msg'), e.message, true); } };
+$('btn-pause').onclick = async () => {
+  const paused = $('btn-pause').dataset.paused === '1';
+  try { await api(paused ? '/api/bot/resume' : '/api/bot/pause', {}); refreshBot(); }
+  catch (e) { setMsg($('msg'), e.message, true); }
+};
 $('btn-music-stop').onclick = async () => { try { await api('/api/bot/stop', {}); refreshBot(); } catch (e) { setMsg($('msg'), e.message, true); } };
 $('vol').oninput = () => { volDragging = true; $('vol-num').textContent = $('vol').value; };
 $('vol').onchange = async () => { volDragging = false; try { await api('/api/bot/volume', { value: Number($('vol').value) }); } catch (e) { setMsg($('msg'), e.message, true); } };
