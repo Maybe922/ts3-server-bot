@@ -629,8 +629,8 @@ $('btn-song-search').onclick = async () => {
     const songs = await api('/api/bot/search', { keyword: kw });
     fillList(box, songs, '没有找到歌曲', song => itemRow(song.name + ' - ' + song.artist,
       Math.floor(song.durationMs/60000) + ':' + String(Math.round(song.durationMs/1000)%60).padStart(2,'0'),
-      '点播', 'btn-outline', async () => {
-        try { await api('/api/bot/play', song); setMsg($('msg'), '已点播「' + song.name + '」', false); refreshBot(); }
+      '添加', 'btn-outline', async () => {
+        try { await api('/api/bot/play', song); setMsg($('msg'), '已添加「' + song.name + '」', false); refreshBot(); }
         catch (e) { setMsg($('msg'), e.message, true); }
       }));
   } catch (e) { setMsg($('msg'), e.message, true); }
