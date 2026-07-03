@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable } from "node:stream";
 import opusModule from "@discordjs/opus";
 import ffmpegPath from "ffmpeg-static";
-import { streamUrl, type Track } from "./netease.js";
+import { streamUrl, coverImage, type Track } from "./netease.js";
 import type { TSClient } from "./ts-client.js";
 
 const { OpusEncoder } = opusModule;
@@ -87,12 +87,14 @@ export class Player {
     this.queue = [];
     this.notice = null;
     this.stopCurrent();
+    void this.ts.clearAvatar().catch(() => {});
   }
 
   private async playNext(): Promise<void> {
     this.stopCurrent();
     const track = this.queue.shift();
     if (!track) {
+      void this.ts.clearAvatar().catch(() => {});
       return;
     }
     // 下载由 Node 完成再喂给 ffmpeg 解码:静态编译的 ffmpeg
@@ -113,7 +115,21 @@ export class Player {
     this.notice = null;
     this.current = track;
     this.startFfmpeg(body);
+    void this.updateCover(track);
     console.log(`▶ ${track.name} - ${track.artist}`);
+  }
+
+  /** 把当前歌曲封面设为 Bot 头像。异步进行，失败只记日志，绝不影响播放。 */
+  private async updateCover(track: Track): Promise<void> {
+    try {
+      const image = await coverImage(track.id);
+      // 取图期间可能已切歌，只在还是这首时才换头像
+      if (image && this.current?.id === track.id) {
+        await this.ts.setAvatar(image);
+      }
+    } catch (err) {
+      console.error(`封面更新失败: ${(err as Error).message}`);
+    }
   }
 
   private startFfmpeg(source: ReadableStream<Uint8Array>): void {

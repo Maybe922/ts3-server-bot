@@ -2,6 +2,8 @@
 // 协议实现来自 MIT 库 @honeybbq/teamspeak-client，本文件只做业务包装。
 import { Client, generateIdentity, identityFromString } from "@honeybbq/teamspeak-client";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { join } from "node:path";
 import { dataDir, type BotConfig } from "./config.js";
 
@@ -80,6 +82,24 @@ export class TSClient {
   /** 发送一帧 20ms 的 Opus 音频。未连接时静默丢弃。 */
   sendOpusFrame(frame: Uint8Array): void {
     this.client?.sendVoice(frame, OPUS_MUSIC_CODEC);
+  }
+
+  /** 把图片设为 Bot 头像（TS 客户端信息栏显示）。
+   * 协议流程：上传到虚拟路径 /avatar → clientupdate 声明内容 MD5。 */
+  async setAvatar(image: Buffer): Promise<void> {
+    const client = this.client;
+    if (!client) {
+      return;
+    }
+    const info = await client.fileTransferInitUpload(0n, "/avatar", "", BigInt(image.length), true);
+    await client.uploadFileData(this.config.serverHost, info, Readable.from(image));
+    const md5 = createHash("md5").update(image).digest("hex");
+    await client.execCommand(`clientupdate client_flag_avatar=${md5}`);
+  }
+
+  /** 清除头像（停止播放后恢复"素颜"）。 */
+  async clearAvatar(): Promise<void> {
+    await this.client?.execCommand("clientupdate client_flag_avatar=");
   }
 
   async stop(): Promise<void> {

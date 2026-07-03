@@ -38,6 +38,20 @@ export async function streamUrl(id: number): Promise<string> {
   return url;
 }
 
+/** 取歌曲封面缩略图（网易云 CDN 直接出 300x300）。封面是锦上添花，任何失败都返回 null 不阻塞播放。 */
+export async function coverImage(id: number): Promise<Buffer | null> {
+  try {
+    const res = await api.song_detail({ ids: String(id), cookie });
+    const picUrl: string | undefined = (res.body as any)?.songs?.[0]?.al?.picUrl;
+    if (!picUrl) return null;
+    const img = await fetch(`${picUrl}?param=300y300`);
+    if (!img.ok) return null;
+    return Buffer.from(await img.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
 // —— 歌单 ——
 
 export interface Playlist {
