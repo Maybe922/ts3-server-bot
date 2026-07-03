@@ -326,6 +326,7 @@
     <hr class="divider">
     <section id="music">
       <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未运行</span></h2>
+      <button class="btn-primary btn-block hidden" id="btn-bot-start">启动点歌机器人</button>
       <div id="music-body" class="hidden stack">
         <div class="item" style="padding-left:0">
           <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
@@ -486,8 +487,28 @@ async function refreshBot() {
     });
     if (s.queue.length > SHOWN) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '…队列中还有 ' + (s.queue.length - SHOWN) + ' 首，共 ' + s.queue.length + ' 首'; q.appendChild(d); }
     if (first) refreshNetease();
-  } catch { chip($('bot-chip'), 'off', '未运行'); show($('music-body'), false); }
+    show($('btn-bot-start'), false);
+  } catch {
+    chip($('bot-chip'), 'off', '未运行');
+    show($('music-body'), false);
+    // Bot 由 systemd 托管但没在跑 → 给出一键启动
+    try {
+      const svc = await api('/api/bot/svc');
+      show($('btn-bot-start'), svc.managed && !svc.running);
+    } catch { show($('btn-bot-start'), false); }
+  }
 }
+
+$('btn-bot-start').onclick = async () => {
+  $('btn-bot-start').disabled = true;
+  setMsg($('msg'), '正在启动机器人…', false);
+  try {
+    const r = await api('/api/bot/svc/start', {});
+    setMsg($('msg'), r.message, false);
+    setTimeout(refreshBot, 2000);
+  } catch (e) { setMsg($('msg'), e.message, true); }
+  finally { $('btn-bot-start').disabled = false; }
+};
 
 async function refreshNetease() {
   try {

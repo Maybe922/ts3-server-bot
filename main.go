@@ -22,7 +22,7 @@ import (
 var webFS embed.FS
 
 const (
-	version    = "0.2.0-dev"
+	version    = "0.3.0"
 	cookieName = "ts3panel_session"
 	queryAddr  = "127.0.0.1:10011"
 )
@@ -92,6 +92,10 @@ func main() {
 	mux.HandleFunc("POST /api/bot/netease/qr/check", s.requireAuth(s.botForward("POST", "/netease/qr/check")))
 	mux.HandleFunc("GET /api/bot/netease/profile", s.requireAuth(s.botForward("GET", "/netease/profile")))
 	mux.HandleFunc("POST /api/bot/netease/logout", s.requireAuth(s.botForward("POST", "/netease/logout")))
+	// Bot 进程托管(systemd)
+	mux.HandleFunc("GET /api/bot/svc", s.requireAuth(s.handleBotSvc))
+	mux.HandleFunc("POST /api/bot/svc/start", s.requireAuth(s.handleBotSvcStart))
+	mux.HandleFunc("POST /api/bot/svc/stop", s.requireAuth(s.handleBotSvcStop))
 
 	log.Printf("ts3panel %s 已启动，监听 %s，数据目录 %s", version, *addr, *dataDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -353,6 +357,26 @@ func (s *server) botForward(method, path string) http.HandlerFunc {
 		w.WriteHeader(status)
 		w.Write(respBody)
 	}
+}
+
+func (s *server) handleBotSvc(w http.ResponseWriter, r *http.Request) {
+	respond(w, http.StatusOK, musicbot.State(), "")
+}
+
+func (s *server) handleBotSvcStart(w http.ResponseWriter, r *http.Request) {
+	if err := musicbot.StartService(); err != nil {
+		respond(w, http.StatusInternalServerError, nil, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"message": "机器人已启动"}, "")
+}
+
+func (s *server) handleBotSvcStop(w http.ResponseWriter, r *http.Request) {
+	if err := musicbot.StopService(); err != nil {
+		respond(w, http.StatusInternalServerError, nil, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"message": "机器人已停止"}, "")
 }
 
 func (s *server) handleChannelDelete(w http.ResponseWriter, r *http.Request) {
