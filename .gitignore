@@ -1,3 +1,10 @@
 ts3panel
 *.tar.bz2
 .DS_Store
+bot/node_modules/
+bot/dist/
+bot/data/
+bot/bot.log
+web/node_modules/
+web/dist/
+data-*/
