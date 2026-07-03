@@ -10,6 +10,20 @@ import { dataDir, type BotConfig } from "./config.js";
 const IDENTITY_FILE = join(dataDir, "identity.txt");
 const RECONNECT_DELAY_MS = 5000;
 const OPUS_MUSIC_CODEC = 5;
+// TS3 昵称上限 30 字符
+const NICKNAME_MAX = 30;
+
+/** TS3 命令参数转义（空格、斜杠、竖线等有协议含义）。 */
+function escapeTs(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\//g, "\\/")
+    .replace(/\|/g, "\\p")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")
+    .replace(/ /g, "\\s");
+}
 
 // 保持同一身份，Bot 在服务器上是稳定的"同一个用户"
 function loadIdentity() {
@@ -100,6 +114,14 @@ export class TSClient {
   /** 清除头像（停止播放后恢复"素颜"）。 */
   async clearAvatar(): Promise<void> {
     await this.client?.execCommand("clientupdate client_flag_avatar=");
+  }
+
+  /** 把正在播放的歌名挂到昵称上（「点歌姬♪歌名」），传 null 恢复原名。 */
+  async setNowPlaying(title: string | null): Promise<void> {
+    const base = this.config.nickname;
+    const full = title ? `${base}♪${title}` : base;
+    const nick = [...full].slice(0, NICKNAME_MAX).join("");
+    await this.client?.execCommand(`clientupdate client_nickname=${escapeTs(nick)}`);
   }
 
   async stop(): Promise<void> {

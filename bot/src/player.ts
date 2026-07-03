@@ -88,6 +88,7 @@ export class Player {
     this.notice = null;
     this.stopCurrent();
     void this.ts.clearAvatar().catch(() => {});
+    void this.ts.setNowPlaying(null).catch(() => {});
   }
 
   private async playNext(): Promise<void> {
@@ -95,6 +96,7 @@ export class Player {
     const track = this.queue.shift();
     if (!track) {
       void this.ts.clearAvatar().catch(() => {});
+      void this.ts.setNowPlaying(null).catch(() => {});
       return;
     }
     // 下载由 Node 完成再喂给 ffmpeg 解码:静态编译的 ffmpeg
@@ -116,6 +118,7 @@ export class Player {
     this.current = track;
     this.startFfmpeg(body);
     void this.updateCover(track);
+    void this.ts.setNowPlaying(track.name).catch(() => {});
     console.log(`▶ ${track.name} - ${track.artist}`);
   }
 
