@@ -18,7 +18,7 @@ import (
 	"ts3panel/internal/tsserver"
 )
 
-//go:embed all:web/dist
+//go:embed web
 var webFS embed.FS
 
 const (
@@ -40,7 +40,7 @@ func main() {
 	botConfig := flag.String("bot-config", "bot/data/config.json", "点歌 Bot 的配置文件路径")
 	flag.Parse()
 
-	static, err := fs.Sub(webFS, "web/dist")
+	static, err := fs.Sub(webFS, "web")
 	if err != nil {
 		log.Fatalf("加载内嵌前端资源失败: %v", err)
 	}
