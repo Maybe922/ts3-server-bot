@@ -1,6 +1,7 @@
 // 播放器：点歌队列 + ffmpeg 解码 + 20ms 帧节拍 + Opus 编码。
 // 管线：音源 URL → ffmpeg(转 48kHz 双声道 PCM) → 按帧切分 → 音量增益 → Opus → TS 语音包
 import { spawn, type ChildProcess } from "node:child_process";
+import { Readable } from "node:stream";
 import opusModule from "@discordjs/opus";
 import ffmpegPath from "ffmpeg-static";
 import { streamUrl, type Track } from "./netease.js";
@@ -30,6 +31,7 @@ export class Player {
   private queue: Track[] = [];
   private current: Track | null = null;
   private ffmpeg: ChildProcess | null = null;
+  private download: Readable | null = null;
   private pcmBuffer: Buffer = Buffer.alloc(0);
   private ffmpegDone = false;
   private nextFrameAt = 0;
@@ -93,9 +95,16 @@ export class Player {
     if (!track) {
       return;
     }
-    let url: string;
+    // 下载由 Node 完成再喂给 ffmpeg 解码:静态编译的 ffmpeg
+    // 在部分 Linux 上一走网络(DNS)就段错误,不能让它自己拉流
+    let body: ReadableStream<Uint8Array>;
     try {
-      url = await streamUrl(track.id);
+      const url = await streamUrl(track.id);
+      const res = await fetch(url);
+      if (!res.ok || !res.body) {
+        throw new Error(`音源响应异常(HTTP ${res.status})`);
+      }
+      body = res.body;
     } catch (err) {
       console.error(`「${track.name}」${(err as Error).message}，跳到下一首`);
       this.notice = `「${track.name}」${(err as Error).message}，已跳过`;
@@ -103,22 +112,28 @@ export class Player {
     }
     this.notice = null;
     this.current = track;
-    this.startFfmpeg(url);
+    this.startFfmpeg(body);
     console.log(`▶ ${track.name} - ${track.artist}`);
   }
 
-  private startFfmpeg(url: string): void {
+  private startFfmpeg(source: ReadableStream<Uint8Array>): void {
     this.pcmBuffer = Buffer.alloc(0);
     this.ffmpegDone = false;
     const ff = spawn(ffmpegPath as unknown as string, [
       "-loglevel", "quiet",
-      "-i", url,
+      "-i", "pipe:0",
       "-f", "s16le",
       "-ar", String(SAMPLE_RATE),
       "-ac", String(CHANNELS),
       "pipe:1",
     ]);
     this.ffmpeg = ff;
+
+    const download = Readable.fromWeb(source as unknown as import("node:stream/web").ReadableStream);
+    this.download = download;
+    download.on("error", () => {}); // 下载中断 → ffmpeg 读到 EOF 自然收尾
+    ff.stdin!.on("error", () => {}); // 切歌 kill ffmpeg 后的 EPIPE
+    download.pipe(ff.stdin!);
 
     ff.stdout!.on("data", (chunk: Buffer) => {
       this.pcmBuffer = Buffer.concat([this.pcmBuffer, chunk]);
@@ -181,6 +196,8 @@ export class Player {
       clearInterval(this.pump);
       this.pump = null;
     }
+    this.download?.destroy();
+    this.download = null;
     this.ffmpeg?.kill("SIGKILL");
     this.ffmpeg = null;
     this.current = null;
