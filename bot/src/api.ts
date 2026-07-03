@@ -60,6 +60,12 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
           data: { message: `已加入歌单「${pl.name}」共 ${pl.tracks.length} 首`, name: pl.name, added: pl.tracks.length },
         });
       }
+      case "POST /remove": {
+        const { index, id } = await body(req);
+        const removed = player.remove(Number(index), Number(id));
+        if (!removed) return send(res, 404, { success: false, error: "这首歌已不在队列中" });
+        return send(res, 200, { success: true, data: { message: `已移除「${removed.name}」` } });
+      }
       case "POST /shuffle":
         player.shuffle();
         return send(res, 200, { success: true, data: { message: "队列已打乱" } });

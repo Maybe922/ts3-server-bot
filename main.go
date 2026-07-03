@@ -22,7 +22,7 @@ import (
 var webFS embed.FS
 
 const (
-	version    = "0.3.7"
+	version    = "0.3.8"
 	cookieName = "ts3panel_session"
 	queryAddr  = "127.0.0.1:10011"
 )
@@ -85,6 +85,7 @@ func main() {
 	mux.HandleFunc("POST /api/bot/play", s.requireAuth(s.botForward("POST", "/play")))
 	mux.HandleFunc("POST /api/bot/playlist", s.requireAuth(s.botForward("POST", "/playlist")))
 	mux.HandleFunc("POST /api/bot/shuffle", s.requireAuth(s.botForward("POST", "/shuffle")))
+	mux.HandleFunc("POST /api/bot/remove", s.requireAuth(s.botForward("POST", "/remove")))
 	mux.HandleFunc("POST /api/bot/skip", s.requireAuth(s.botForward("POST", "/skip")))
 	mux.HandleFunc("POST /api/bot/previous", s.requireAuth(s.botForward("POST", "/previous")))
 	mux.HandleFunc("POST /api/bot/pause", s.requireAuth(s.botForward("POST", "/pause")))

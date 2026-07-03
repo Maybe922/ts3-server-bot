@@ -525,7 +525,12 @@ async function refreshBot() {
     s.queue.slice(0, SHOWN).forEach((t, i) => {
       const d = document.createElement('div'); d.className = 'item';
       const g = document.createElement('span'); g.className = 'grow'; g.textContent = (i+1) + '. ' + t.name + ' - ' + t.artist;
-      d.appendChild(g); q.appendChild(d);
+      const rm = document.createElement('button'); rm.className = 'btn-ghost btn-sm'; rm.textContent = '移除'; rm.title = '从队列移除';
+      rm.onclick = async () => {
+        try { const r = await api('/api/bot/remove', { index: i, id: t.id }); setMsg($('msg'), r.message, false); refreshBot(); }
+        catch (e) { setMsg($('msg'), e.message, true); refreshBot(); }
+      };
+      d.appendChild(g); d.appendChild(rm); q.appendChild(d);
     });
     if (s.queue.length > SHOWN) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '…队列中还有 ' + (s.queue.length - SHOWN) + ' 首，共 ' + s.queue.length + ' 首'; q.appendChild(d); }
     if (first) refreshNetease();

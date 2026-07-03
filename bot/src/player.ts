@@ -80,6 +80,19 @@ export class Player {
     }
   }
 
+  /** 从队列移除一首。index 与 id 双重校验：刷新间隙队列变动时按 id 兜底。 */
+  remove(index: number, id: number): Track | null {
+    let at = index;
+    if (this.queue[at]?.id !== id) {
+      at = this.queue.findIndex((t) => t.id === id);
+    }
+    if (at < 0 || at >= this.queue.length) {
+      return null;
+    }
+    const [removed] = this.queue.splice(at, 1);
+    return removed;
+  }
+
   /** 打乱当前队列。 */
   shuffle(): void {
     for (let i = this.queue.length - 1; i > 0; i--) {
