@@ -33,7 +33,13 @@ type Manager struct {
 }
 
 func NewManager(baseDir string) *Manager {
-	return &Manager{baseDir: baseDir}
+	// 转为绝对路径：启动子进程时 cmd.Dir 会先切换工作目录，
+	// 相对路径会在子进程的新工作目录下解析而找不到二进制。
+	abs, err := filepath.Abs(baseDir)
+	if err != nil {
+		abs = baseDir
+	}
+	return &Manager{baseDir: abs}
 }
 
 func (m *Manager) serverDir() string { return filepath.Join(m.baseDir, "server") }
