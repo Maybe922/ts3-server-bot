@@ -20,6 +20,8 @@ export interface PlayerStatus {
   current: Track | null;
   queue: Track[];
   volume: number;
+  /** 面向用户的最近一条播放提示(如"VIP 歌曲已跳过"),正常播放时为 null */
+  notice: string | null;
 }
 
 export class Player {
@@ -32,6 +34,7 @@ export class Player {
   private ffmpegDone = false;
   private nextFrameAt = 0;
   private pump: ReturnType<typeof setInterval> | null = null;
+  private notice: string | null = null;
   /** 0-100 */
   volume = 60;
 
@@ -45,6 +48,7 @@ export class Player {
       current: this.current,
       queue: [...this.queue],
       volume: this.volume,
+      notice: this.notice,
     };
   }
 
@@ -79,6 +83,7 @@ export class Player {
 
   stopAll(): void {
     this.queue = [];
+    this.notice = null;
     this.stopCurrent();
   }
 
@@ -93,8 +98,10 @@ export class Player {
       url = await streamUrl(track.id);
     } catch (err) {
       console.error(`「${track.name}」${(err as Error).message}，跳到下一首`);
+      this.notice = `「${track.name}」${(err as Error).message}，已跳过`;
       return this.playNext();
     }
+    this.notice = null;
     this.current = track;
     this.startFfmpeg(url);
     console.log(`▶ ${track.name} - ${track.artist}`);

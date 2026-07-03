@@ -217,6 +217,7 @@
   .modal h3 { font-size: 1rem; }
   .modal img { width: 190px; height: 190px; border-radius: 12px; background: #fff; padding: 8px; }
   .hint { color: var(--text-dim); font-size: .875rem; margin-bottom: .75rem; }
+  .notice { color: var(--warn); font-size: .875rem; }
   .modal .hint { margin-bottom: 0; }
 
   .hidden { display: none !important; }
@@ -342,6 +343,7 @@
           <button class="btn-outline btn-sm" id="btn-skip">切歌</button>
           <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
         </div>
+        <p class="notice hidden" id="player-notice"></p>
         <div class="vol">
           <span class="lbl">音量</span>
           <input type="range" id="vol" min="0" max="100" step="5">
@@ -481,6 +483,8 @@ async function refreshBot() {
     show($('music-body'), true);
     $('now-playing').textContent = s.current ? '♪ ' + s.current.name + ' - ' + s.current.artist : '没有正在播放的歌曲';
     $('now-playing').className = 'title' + (s.current ? ' playing' : '');
+    $('player-notice').textContent = s.notice || '';
+    show($('player-notice'), !!s.notice);
     if (!volDragging) { $('vol').value = s.volume; $('vol-num').textContent = s.volume; }
     const q = $('music-queue'); q.replaceChildren();
     const SHOWN = 8;
