@@ -53,6 +53,13 @@
   button:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
   button.secondary:hover { border-color: var(--danger); color: var(--danger); }
+  button.ghost { background: transparent; border: 0; color: var(--text-dim); font-size: 0.8125rem; padding: 0.25rem; }
+  button.ghost:hover { color: var(--text); background: transparent; }
+  input[type=password] {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.625rem 0.875rem; width: 100%;
+  }
+  input[type=password]:focus { outline: 0; border-color: var(--accent); }
   label { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.875rem; color: var(--text-dim); }
   label a { color: var(--accent); }
   .creds {
@@ -69,11 +76,41 @@
   .msg { font-size: 0.875rem; min-height: 1.25rem; }
   .msg.err { color: var(--danger); }
   .hidden { display: none; }
+  .form { display: flex; flex-direction: column; gap: 0.875rem; }
+  .topbar { display: flex; justify-content: space-between; align-items: baseline; }
 </style>
 </head>
 <body>
-<main class="card">
+
+<!-- 首次使用：设置管理密码 -->
+<main class="card hidden" id="view-setup">
   <h1>TS3 <span>Panel</span></h1>
+  <p class="sub">欢迎！首次使用请设置面板管理密码</p>
+  <div class="form">
+    <input type="password" id="setup-pw" placeholder="设置密码（至少 8 位）" autocomplete="new-password">
+    <input type="password" id="setup-pw2" placeholder="再输入一次" autocomplete="new-password">
+    <button id="btn-setup">设置并进入面板</button>
+    <p class="msg" id="setup-msg"></p>
+  </div>
+</main>
+
+<!-- 登录 -->
+<main class="card hidden" id="view-login">
+  <h1>TS3 <span>Panel</span></h1>
+  <p class="sub">请输入面板管理密码</p>
+  <div class="form">
+    <input type="password" id="login-pw" placeholder="密码" autocomplete="current-password">
+    <button id="btn-login">登录</button>
+    <p class="msg" id="login-msg"></p>
+  </div>
+</main>
+
+<!-- 主面板 -->
+<main class="card hidden" id="view-main">
+  <div class="topbar">
+    <h1>TS3 <span>Panel</span></h1>
+    <button class="ghost" id="btn-logout">退出登录</button>
+  </div>
   <p class="sub">TeamSpeak 3 一键部署与管理</p>
 
   <dl>
@@ -98,7 +135,7 @@
   </div>
 
   <div class="creds hidden" id="creds">
-    <h2>⚠ 管理凭据（请立即保存，仅此处可见）</h2>
+    <h2>⚠ 管理凭据（请妥善保存）</h2>
     <p>连接地址：<code id="c-addr">…</code></p>
     <p>管理员密钥 Token：<code id="c-token">…</code></p>
     <p>Query 账号：<code id="c-user">…</code> / <code id="c-pass">…</code></p>
@@ -108,13 +145,40 @@
 <script>
 const $ = id => document.getElementById(id);
 const show = (el, on) => el.classList.toggle('hidden', !on);
+const views = ['view-setup', 'view-login', 'view-main'];
+let pollTimer = null;
+
+function switchView(id) {
+  views.forEach(v => show($(v), v === id));
+  clearInterval(pollTimer);
+  if (id === 'view-main') {
+    refresh();
+    pollTimer = setInterval(refresh, 5000);
+  }
+}
 
 async function api(path, body) {
   const opts = body ? { method: 'POST', body: JSON.stringify(body) } : {};
   const res = await fetch(path, opts);
+  if (res.status === 401) { boot(); throw new Error('未登录'); }
   const json = await res.json();
   if (!json.success) throw new Error(json.error || '请求失败');
   return json.data;
+}
+
+async function boot() {
+  try {
+    const s = await api('/api/auth/state');
+    switchView(!s.passwordSet ? 'view-setup' : s.loggedIn ? 'view-main' : 'view-login');
+  } catch {
+    setMsg($('login-msg'), '无法连接面板', true);
+    switchView('view-login');
+  }
+}
+
+function setMsg(el, text, isErr) {
+  el.textContent = text;
+  el.className = 'msg' + (isErr ? ' err' : '');
 }
 
 async function refresh() {
@@ -137,28 +201,49 @@ async function refresh() {
       $('c-pass').textContent = s.credentials.queryPassword;
     }
   } catch (e) {
-    setMsg('无法连接面板: ' + e.message, true);
+    if (e.message !== '未登录') setMsg($('msg'), e.message, true);
   }
-}
-
-function setMsg(text, isErr) {
-  $('msg').textContent = text;
-  $('msg').className = 'msg' + (isErr ? ' err' : '');
 }
 
 async function action(btn, path, body, pending) {
   btn.disabled = true;
-  setMsg(pending, false);
+  setMsg($('msg'), pending, false);
   try {
     const data = await api(path, body);
-    setMsg(data.message || '完成', false);
+    setMsg($('msg'), data.message || '完成', false);
   } catch (e) {
-    setMsg(e.message, true);
+    setMsg($('msg'), e.message, true);
   } finally {
     btn.disabled = false;
     refresh();
   }
 }
+
+$('btn-setup').onclick = async () => {
+  const pw = $('setup-pw').value, pw2 = $('setup-pw2').value;
+  if (pw !== pw2) return setMsg($('setup-msg'), '两次输入不一致', true);
+  try {
+    await api('/api/auth/setup', { password: pw });
+    switchView('view-main');
+  } catch (e) {
+    setMsg($('setup-msg'), e.message, true);
+  }
+};
+
+$('btn-login').onclick = async () => {
+  try {
+    await api('/api/auth/login', { password: $('login-pw').value });
+    switchView('view-main');
+  } catch (e) {
+    setMsg($('login-msg'), e.message, true);
+  }
+};
+$('login-pw').onkeydown = e => { if (e.key === 'Enter') $('btn-login').click(); };
+
+$('btn-logout').onclick = async () => {
+  await api('/api/auth/logout', {}).catch(() => {});
+  switchView('view-login');
+};
 
 $('eula').onchange = e => { $('btn-install').disabled = !e.target.checked; };
 $('btn-install').onclick = () =>
@@ -166,8 +251,7 @@ $('btn-install').onclick = () =>
 $('btn-start').onclick = () => action($('btn-start'), '/api/server/start', {}, '正在启动…');
 $('btn-stop').onclick = () => action($('btn-stop'), '/api/server/stop', {}, '正在停止…');
 
-refresh();
-setInterval(refresh, 5000);
+boot();
 </script>
 </body>
 </html>
