@@ -69,6 +69,17 @@
   .card.narrow { width: min(26rem, 95vw); }
   .card-pad { padding: clamp(1.5rem, 4vw, 2.5rem); }
 
+  /* 主面板双栏:左服务器右点歌台,窄屏回退单列 */
+  main#view-main { width: min(72rem, 95vw); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 3rem; position: relative; align-items: start; }
+  .cols > .col { min-width: 0; }
+  .cols::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--border-soft); }
+  @media (max-width: 920px) {
+    .cols { grid-template-columns: 1fr; }
+    .cols::before { display: none; }
+    .cols > .col + .col { border-top: 1px solid var(--border-soft); padding-top: 1.5rem; margin-top: 1.5rem; }
+  }
+
   /* Header */
   .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
   .brand h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -.01em; }
@@ -269,6 +280,9 @@
 
     <hr class="divider">
 
+    <div class="cols">
+    <!-- 左栏:服务器 -->
+    <div class="col">
     <div class="kv"><span class="k">面板版本</span><span class="v" id="ver">…</span></div>
 
     <!-- 服务器 -->
@@ -323,9 +337,10 @@
         <div class="list" id="client-list"></div>
       </section>
     </div>
+    </div><!-- /左栏 -->
 
-    <!-- 点歌台 -->
-    <hr class="divider">
+    <!-- 右栏:点歌台 -->
+    <div class="col">
     <section id="music">
       <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未启用</span> <button class="btn-ghost btn-sm hidden" id="btn-bot-off">停用机器人</button></h2>
       <div id="bot-offer" class="hidden">
@@ -363,6 +378,8 @@
         </div>
       </div>
     </section>
+    </div><!-- /右栏 -->
+    </div><!-- /cols -->
 
     <hr class="divider">
     <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板</p>
