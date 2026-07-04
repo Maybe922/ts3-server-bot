@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # TS3 Panel 一键安装脚本: 管理面板 + 点歌机器人 (TS3 服务器在面板界面里安装)
-# 用法: curl -fsSL https://raw.githubusercontent.com/Maybe922/ts3-server-bot/main/scripts/install.sh | sudo bash
+# 海外/香港 VPS: curl -fsSL https://raw.githubusercontent.com/Maybe922/ts3-server-bot/main/scripts/install.sh | sudo bash
+# 中国大陆 VPS:  curl -fsSL https://gitee.com/wushuangqq/ts3-server-bo/raw/main/scripts/install.sh | sudo bash
 set -euo pipefail
 
 BASE_DIR="/opt/ts3panel"
@@ -8,8 +9,8 @@ DATA_DIR="${BASE_DIR}/data"
 BOT_DIR="${BASE_DIR}/bot"
 PANEL_PORT="8090"
 RUN_USER="ts3panel"
-# 主源: GitHub Releases。TODO: 增加国内镜像源为首选,此地址作兜底
-DOWNLOAD_BASE="https://github.com/Maybe922/ts3-server-bot/releases/latest/download"
+GH_BASE="https://github.com/Maybe922/ts3-server-bot/releases/latest/download"
+GITEE_REPO="wushuangqq/ts3-server-bo"
 
 info() { echo -e "\033[1;34m[TS3Panel]\033[0m $*"; }
 fail() { echo -e "\033[1;31m[错误]\033[0m $*" >&2; exit 1; }
@@ -22,6 +23,18 @@ case "$(uname -m)" in
   aarch64) ARCH=arm64 ;;
   *) fail "暂不支持的架构: $(uname -m)" ;;
 esac
+
+# ---------- 自动选下载源: GitHub 通就用 GitHub,不通切 Gitee(大陆) ----------
+if curl -fsIL -m 8 -o /dev/null "${GH_BASE}/SHA256SUMS" 2>/dev/null; then
+  DOWNLOAD_BASE="${GH_BASE}"
+  info "下载源: GitHub"
+else
+  GITEE_TAG=$(curl -fsSL -m 10 "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/latest" 2>/dev/null \
+    | grep -o '"tag_name":"[^"]*' | head -1 | cut -d'"' -f4)
+  [ -n "${GITEE_TAG}" ] || fail "GitHub 与 Gitee 均无法访问,请检查网络"
+  DOWNLOAD_BASE="https://gitee.com/${GITEE_REPO}/releases/download/${GITEE_TAG}"
+  info "下载源: Gitee 国内镜像 (${GITEE_TAG})"
+fi
 
 # ---------- 运行用户与目录 ----------
 id -u "${RUN_USER}" >/dev/null 2>&1 || useradd --system --home-dir "${BASE_DIR}" --shell /usr/sbin/nologin "${RUN_USER}"
@@ -41,10 +54,27 @@ if command -v node >/dev/null; then
   # Bot 预构建包的原生模块与 Node 22 ABI 绑定
   [ "${NODE_MAJOR}" -ge 22 ] && NEED_NODE=0
 fi
+install_node_nodesource() {
+  curl -fsSL -m 60 https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1 \
+    && apt-get install -y nodejs >/dev/null 2>&1
+}
+
+# 大陆兜底: 从 npmmirror(阿里)拉官方 Node 二进制,装到 /usr/local
+install_node_npmmirror() {
+  [ "${ARCH}" = "amd64" ] || return 1
+  local ver
+  ver=$(curl -fsSL -m 15 "https://registry.npmmirror.com/-/binary/node/latest-v22.x/" 2>/dev/null \
+    | grep -o '"name":"node-v22[0-9.]*-linux-x64\.tar\.gz"' | cut -d'"' -f4 \
+    | sed 's/node-\(v22[0-9.]*\)-linux-x64.tar.gz/\1/' | sort -V | tail -1)
+  [ -n "${ver}" ] || return 1
+  info "从 npmmirror 安装 Node ${ver}..."
+  curl -fsSL -m 600 "https://npmmirror.com/mirrors/node/${ver}/node-${ver}-linux-x64.tar.gz" -o /tmp/node22.tar.gz || return 1
+  tar -xzf /tmp/node22.tar.gz -C /usr/local --strip-components=1 && rm -f /tmp/node22.tar.gz
+}
+
 if [ "${NEED_NODE}" -eq 1 ]; then
   info "[2/3] 安装 Node.js 22(点歌机器人运行时)..."
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1 \
-    && apt-get install -y nodejs >/dev/null 2>&1 \
+  install_node_nodesource || install_node_npmmirror \
     || info "Node 安装失败,跳过机器人(面板与 TS3 服务器不受影响,可稍后重试)"
 else
   info "[2/3] Node.js 已就绪 ($(node -v))"

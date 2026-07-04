@@ -8,11 +8,17 @@
 在一台干净的 Ubuntu/Debian VPS 上（root）执行：
 
 ```bash
+# 海外 / 香港 VPS
 curl -fsSL https://raw.githubusercontent.com/Maybe922/ts3-server-bot/main/scripts/install.sh | sudo bash
+
+# 中国大陆 VPS（Gitee 镜像，二进制也自动走国内源）
+curl -fsSL https://gitee.com/wushuangqq/ts3-server-bo/raw/main/scripts/install.sh | sudo bash
 ```
 
+安装脚本会自动探测网络：GitHub 可达就走 GitHub，不可达自动切换 Gitee 国内镜像。
+
 然后浏览器打开 `http://你的IP:8090`，按界面引导操作。
-记得在云控制台放行端口：TCP 8090（面板）、UDP 9987（语音）、TCP 30033（文件传输）。
+记得在云控制台放行端口：TCP 8090（面板）、UDP 9987（语音）、TCP 30033（文件传输/头像）。
 
 ## 为什么做这个
 
