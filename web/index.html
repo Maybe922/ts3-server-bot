@@ -613,7 +613,7 @@ async function action(btn, path, body, pending) {
   finally { btn.disabled = false; refresh(); }
 }
 $('eula').onchange = e => { $('btn-install').disabled = !e.target.checked; };
-$('btn-install').onclick = () => action($('btn-install'), '/api/server/install', { acceptLicense: $('eula').checked }, '正在从官方源下载安装（约 10MB）…');
+$('btn-install').onclick = () => action($('btn-install'), '/api/server/install', { acceptLicense: $('eula').checked }, '正在下载安装 TS3 服务器（约 10MB，官方源不通时自动切国内镜像）…');
 $('btn-start').onclick = () => action($('btn-start'), '/api/server/start', {}, '正在启动…');
 $('btn-stop').onclick = () => action($('btn-stop'), '/api/server/stop', {}, '正在停止…');
 

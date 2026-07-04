@@ -19,9 +19,14 @@ import (
 // Version 是当前锁定的 TS3 服务端版本。
 const Version = "3.13.8"
 
-// 官方下载源。后续增加自建香港镜像作为首选源，官方源兜底。
-const officialURL = "https://files.teamspeak-services.com/releases/server/" +
-	Version + "/teamspeak3-server_linux_amd64-" + Version + ".tar.bz2"
+// 下载源按顺序尝试：官方源优先，Gitee 国内镜像兜底。
+// 镜像是官方包的逐字节拷贝，无论从哪个源下载都必须过同一个 SHA256 校验。
+var downloadURLs = []string{
+	"https://files.teamspeak-services.com/releases/server/" +
+		Version + "/teamspeak3-server_linux_amd64-" + Version + ".tar.bz2",
+	"https://gitee.com/wushuangqq/ts3-server-bo/releases/download/ts3-" +
+		Version + "/teamspeak3-server_linux_amd64-" + Version + ".tar.bz2",
+}
 
 // 2026-07-03 从官方源实测记录的校验和（见 README"已验证的事实"）。
 const officialSHA256 = "a3c4658e09892d3dbd8ea752d0de42dc7d111bf44d09721927f0f4782496eb2d"
@@ -63,12 +68,28 @@ func (m *Manager) Install(ctx context.Context, acceptLicense bool) error {
 	return nil
 }
 
-// download 拉取安装包到临时文件并校验 SHA256，返回临时文件路径。
+// download 依次尝试各下载源，成功即返回临时文件路径（含 SHA256 校验）。
 func (m *Manager) download(ctx context.Context) (string, error) {
+	var errs []string
+	for _, url := range downloadURLs {
+		path, err := m.downloadFrom(ctx, url)
+		if err == nil {
+			return path, nil
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err() // 用户取消/整体超时,不再换源
+		}
+		errs = append(errs, err.Error())
+	}
+	return "", fmt.Errorf("所有下载源均失败: %s", strings.Join(errs, "; "))
+}
+
+// downloadFrom 从单一源拉取安装包到临时文件并校验 SHA256。
+func (m *Manager) downloadFrom(ctx context.Context, url string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, officialURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +99,7 @@ func (m *Manager) download(ctx context.Context) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("官方源返回 HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("下载源返回 HTTP %d", resp.StatusCode)
 	}
 
 	if err := os.MkdirAll(m.baseDir, 0o755); err != nil {
