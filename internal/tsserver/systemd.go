@@ -112,8 +112,11 @@ func (m *Manager) runningSystemd() bool {
 }
 
 // captureFromJournal 跟踪 journal 输出，抓取首次启动生成的管理凭据。
+// -n 200 回放近段历史：ts3server 首启打印凭据非常早，若只跟新行（-n 0），
+// 监听启动慢半拍就会漏掉账号行（真实发生过：两行凭据只差 1 秒，只抓到了 token）。
+// 旧安装残留的过期凭据行即使被回放，也会被随后到达的新行覆盖。
 func (m *Manager) captureFromJournal() {
-	cmd := exec.Command("journalctl", "-u", unitName, "-f", "-n", "0", "-o", "cat")
+	cmd := exec.Command("journalctl", "-u", unitName, "-f", "-n", "200", "-o", "cat")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Printf("打开 journal 失败: %v", err)
