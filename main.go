@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"io"
@@ -16,13 +17,14 @@ import (
 	"ts3panel/internal/musicbot"
 	"ts3panel/internal/query"
 	"ts3panel/internal/tsserver"
+	"ts3panel/internal/update"
 )
 
 //go:embed web
 var webFS embed.FS
 
 const (
-	version    = "0.4.0"
+	version    = "0.5.0"
 	cookieName = "ts3panel_session"
 	queryAddr  = "127.0.0.1:10011"
 )
@@ -31,6 +33,7 @@ type server struct {
 	ts   *tsserver.Manager
 	auth *auth.Store
 	bot  *musicbot.Proxy
+	upd  *update.Updater
 }
 
 func main() {
@@ -57,6 +60,8 @@ func main() {
 		ts:   tsserver.NewManager(*dataDir, useSystemd),
 		auth: auth.NewStore(*dataDir),
 		bot:  musicbot.NewProxy(*botConfig),
+		// bot-config 形如 <botDir>/data/config.json，上溯两级即机器人安装目录
+		upd: update.New(version, filepath.Dir(filepath.Dir(*botConfig))),
 	}
 
 	mux := http.NewServeMux()
@@ -93,6 +98,7 @@ func main() {
 	mux.HandleFunc("POST /api/bot/stop", s.requireAuth(s.botForward("POST", "/stop")))
 	mux.HandleFunc("POST /api/bot/volume", s.requireAuth(s.botForward("POST", "/volume")))
 	mux.HandleFunc("POST /api/bot/nickname", s.requireAuth(s.botForward("POST", "/nickname")))
+	mux.HandleFunc("POST /api/bot/serverpassword", s.requireAuth(s.botForward("POST", "/serverpassword")))
 	mux.HandleFunc("POST /api/bot/netease/qr/start", s.requireAuth(s.botForward("POST", "/netease/qr/start")))
 	mux.HandleFunc("POST /api/bot/netease/qr/check", s.requireAuth(s.botForward("POST", "/netease/qr/check")))
 	mux.HandleFunc("GET /api/bot/netease/profile", s.requireAuth(s.botForward("GET", "/netease/profile")))
@@ -101,6 +107,10 @@ func main() {
 	mux.HandleFunc("GET /api/bot/svc", s.requireAuth(s.handleBotSvc))
 	mux.HandleFunc("POST /api/bot/svc/start", s.requireAuth(s.handleBotSvcStart))
 	mux.HandleFunc("POST /api/bot/svc/stop", s.requireAuth(s.handleBotSvcStop))
+	// 面板自更新；/api/version 公开，供更新重启期间前端轮询探活
+	mux.HandleFunc("GET /api/version", s.handleVersion)
+	mux.HandleFunc("GET /api/update/check", s.requireAuth(s.handleUpdateCheck))
+	mux.HandleFunc("POST /api/update/apply", s.requireAuth(s.handleUpdateApply))
 
 	log.Printf("ts3panel %s 已启动，监听 %s，数据目录 %s", version, *addr, *dataDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -382,6 +392,29 @@ func (s *server) handleBotSvcStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, map[string]string{"message": "机器人已停用，不会再自动进入服务器"}, "")
+}
+
+func (s *server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	respond(w, http.StatusOK, map[string]string{"version": version}, "")
+}
+
+func (s *server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	res, err := s.upd.Check(r.Context())
+	if err != nil {
+		respond(w, http.StatusBadGateway, nil, "检查更新失败: "+err.Error())
+		return
+	}
+	respond(w, http.StatusOK, res, "")
+}
+
+func (s *server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	tag, err := s.upd.Apply(r.Context())
+	if err != nil {
+		respond(w, http.StatusInternalServerError, nil, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"message": "已更新到 " + tag + "，面板正在重启…"}, "")
+	update.ScheduleRestart()
 }
 
 func (s *server) handleChannelDelete(w http.ResponseWriter, r *http.Request) {

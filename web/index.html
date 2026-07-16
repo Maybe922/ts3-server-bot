@@ -208,6 +208,17 @@
   .now .title { flex: 1; overflow-wrap: anywhere; }
   .now .title.playing { color: var(--accent); }
 
+  /* 播放进度条（只读） */
+  .progress { display: flex; align-items: center; gap: .75rem; }
+  .progress .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+  .progress .fill { height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .5s linear; }
+  .progress .time { font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: .8125rem; white-space: nowrap; }
+
+  /* 搜索结果翻页 */
+  .pager { display: flex; align-items: center; gap: .5rem; padding: .25rem .75rem; }
+  .pager .pg { flex: 1; text-align: center; color: var(--text-faint); font-size: .8125rem; }
+  .pager button:disabled { opacity: .35; cursor: not-allowed; }
+
   /* Volume */
   .vol { display: flex; align-items: center; gap: 1rem; }
   .vol .lbl { font-size: .8125rem; color: var(--text-dim); white-space: nowrap; }
@@ -356,6 +367,10 @@
           <button class="btn-outline btn-sm" id="btn-bot-rename">改名</button>
         </div>
         <div class="item" style="padding-left:0">
+          <span class="grow meta" id="srv-pw">服务器密码：…</span>
+          <button class="btn-outline btn-sm" id="btn-srv-pw">设置</button>
+        </div>
+        <div class="item" style="padding-left:0">
           <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
           <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
           <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
@@ -366,6 +381,10 @@
           <button class="btn-outline btn-sm ctrl" id="btn-pause" title="暂停 / 继续">⏸</button>
           <button class="btn-outline btn-sm ctrl" id="btn-skip" title="下一首">⏭</button>
           <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
+        </div>
+        <div class="progress hidden" id="prog">
+          <div class="bar"><div class="fill" id="prog-fill"></div></div>
+          <span class="time" id="prog-time">0:00 / 0:00</span>
         </div>
         <p class="notice hidden" id="player-notice"></p>
         <div class="vol">
@@ -387,7 +406,9 @@
     </div><!-- /cols -->
 
     <hr class="divider">
-    <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板</p>
+    <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板
+      <button class="btn-outline btn-sm hidden" id="btn-update" style="margin-left:.75rem"></button>
+    </p>
   </div>
 </main>
 
@@ -419,7 +440,7 @@ applyTheme(localStorage.getItem('ts3panel-theme') || 'dark');
 function switchView(id) {
   views.forEach(v => show($(v), v === id));
   clearInterval(pollTimer);
-  if (id === 'view-main') { refresh(); pollTimer = setInterval(refresh, 5000); }
+  if (id === 'view-main') { refresh(); pollTimer = setInterval(refresh, 5000); checkUpdate(); }
 }
 
 async function api(path, body) {
@@ -469,6 +490,27 @@ function fmtUptime(s) {
   if (s < 86400) return (s/3600).toFixed(1) + ' 小时';
   return (s/86400).toFixed(1) + ' 天';
 }
+function fmtTime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// —— 播放进度：状态每 5s 校准一次，之间按墙钟本地插值平滑推进 ——
+let prog = null; // { positionMs, durationMs, paused, at }
+function renderProgress() {
+  if (!prog) return;
+  let pos = prog.positionMs + (prog.paused ? 0 : Date.now() - prog.at);
+  if (prog.durationMs > 0) {
+    pos = Math.min(pos, prog.durationMs);
+    $('prog-fill').style.width = (pos / prog.durationMs * 100) + '%';
+    $('prog-time').textContent = fmtTime(pos) + ' / ' + fmtTime(prog.durationMs);
+  } else {
+    // 拿不到总时长（元数据缺失）就只显示已播时间
+    $('prog-fill').style.width = '0';
+    $('prog-time').textContent = fmtTime(pos);
+  }
+}
+setInterval(renderProgress, 1000);
 function itemRow(name, meta, btnText, btnCls, onClick) {
   const row = document.createElement('div'); row.className = 'item';
   const g = document.createElement('span'); g.className = 'grow'; g.textContent = name;
@@ -515,10 +557,25 @@ async function refreshBot() {
     $('btn-pause').dataset.paused = s.paused ? '1' : '';
     $('btn-pause').disabled = !s.current;
     $('btn-prev').disabled = !s.hasPrevious;
+    if (s.current) {
+      prog = { positionMs: s.positionMs || 0, durationMs: s.current.durationMs || 0, paused: !!s.paused, at: Date.now() };
+      show($('prog'), true);
+      renderProgress();
+    } else {
+      prog = null;
+      show($('prog'), false);
+    }
     $('bot-name').textContent = '机器人昵称：' + (s.nickname || '点歌姬');
     $('bot-name').dataset.name = s.nickname || '';
-    $('player-notice').textContent = s.notice || '';
-    show($('player-notice'), !!s.notice);
+    $('srv-pw').textContent = '服务器密码：' + (s.serverPasswordSet ? '已设置' : '未设置');
+    // 反复连不上时给出可操作的提示（最常见原因：服主在 TS 客户端里给服务器设了连接密码）
+    const connHint = !s.connected && s.connectFailures >= 3
+      ? (s.serverPasswordSet
+          ? '机器人一直连不上：已填的服务器密码可能不对，请核对后重新「设置」；若服务器没有密码请清除'
+          : '机器人一直连不上：如果你在 TS 客户端里给服务器设置了「服务器密码」，请在上方「服务器密码」一栏填入同一个密码')
+      : null;
+    $('player-notice').textContent = connHint || s.notice || '';
+    show($('player-notice'), !!(connHint || s.notice));
     if (!volDragging) { $('vol').value = s.volume; $('vol-num').textContent = s.volume; }
     const q = $('music-queue'); q.replaceChildren();
     const SHOWN = 8;
@@ -539,6 +596,7 @@ async function refreshBot() {
   } catch {
     chip($('bot-chip'), 'off', '未启用');
     show($('music-body'), false);
+    prog = null;
     // Bot 已装好但没在跑 → 给出可选的一键启用;正在跑但接口还没就绪 → 保留停用入口
     try {
       const svc = await api('/api/bot/svc');
@@ -564,6 +622,16 @@ $('btn-bot-rename').onclick = async () => {
   if (!name || !name.trim()) return;
   try {
     const r = await api('/api/bot/nickname', { name: name.trim() });
+    setMsg($('msg'), r.message, false);
+    refreshBot();
+  } catch (e) { setMsg($('msg'), e.message, true); }
+};
+
+$('btn-srv-pw').onclick = async () => {
+  const pw = prompt('TS 服务器的连接密码（即你在 TS 客户端里给服务器设置的密码；留空后确定 = 清除）：');
+  if (pw === null) return;
+  try {
+    const r = await api('/api/bot/serverpassword', { password: pw });
     setMsg($('msg'), r.message, false);
     refreshBot();
   } catch (e) { setMsg($('msg'), e.message, true); }
@@ -627,18 +695,34 @@ $('btn-add-channel').onclick = async () => {
 };
 $('new-channel').onkeydown = e => { if (e.key === 'Enter') $('btn-add-channel').click(); };
 
-$('btn-song-search').onclick = async () => {
-  const kw = $('song-kw').value.trim(); if (!kw) return;
-  const box = $('song-results'); box.replaceChildren();
+let searchKw = '';
+async function searchSongs(page) {
+  const box = $('song-results');
   try {
-    const songs = await api('/api/bot/search', { keyword: kw });
-    fillList(box, songs, '没有找到歌曲', song => itemRow(song.name + ' - ' + song.artist,
-      Math.floor(song.durationMs/60000) + ':' + String(Math.round(song.durationMs/1000)%60).padStart(2,'0'),
+    const r = await api('/api/bot/search', { keyword: searchKw, page });
+    fillList(box, r.songs, '没有找到歌曲', song => itemRow(song.name + ' - ' + song.artist,
+      fmtTime(song.durationMs),
       '添加', 'btn-outline', async () => {
         try { await api('/api/bot/play', song); setMsg($('msg'), '已添加「' + song.name + '」', false); refreshBot(); }
         catch (e) { setMsg($('msg'), e.message, true); }
       }));
+    // 有得翻才显示翻页行：第一页且无更多结果时保持原来的清爽
+    if (r.songs.length && (r.page > 1 || r.hasMore)) {
+      const pager = document.createElement('div'); pager.className = 'pager';
+      const prev = document.createElement('button'); prev.className = 'btn-ghost btn-sm'; prev.textContent = '‹ 上一页';
+      prev.disabled = r.page <= 1; prev.onclick = () => searchSongs(r.page - 1);
+      const label = document.createElement('span'); label.className = 'pg'; label.textContent = '第 ' + r.page + ' 页';
+      const next = document.createElement('button'); next.className = 'btn-ghost btn-sm'; next.textContent = '下一页 ›';
+      next.disabled = !r.hasMore; next.onclick = () => searchSongs(r.page + 1);
+      pager.append(prev, label, next);
+      box.appendChild(pager);
+    }
   } catch (e) { setMsg($('msg'), e.message, true); }
+}
+$('btn-song-search').onclick = () => {
+  const kw = $('song-kw').value.trim(); if (!kw) return;
+  searchKw = kw;
+  searchSongs(1);
 };
 $('song-kw').onkeydown = e => { if (e.key === 'Enter') $('btn-song-search').click(); };
 
@@ -661,6 +745,40 @@ $('btn-pause').onclick = async () => {
 $('btn-music-stop').onclick = async () => { try { await api('/api/bot/stop', {}); refreshBot(); } catch (e) { setMsg($('msg'), e.message, true); } };
 $('vol').oninput = () => { volDragging = true; $('vol-num').textContent = $('vol').value; };
 $('vol').onchange = async () => { volDragging = false; try { await api('/api/bot/volume', { value: Number($('vol').value) }); } catch (e) { setMsg($('msg'), e.message, true); } };
+
+// —— 面板自更新 ——
+let updateTag = null;
+async function checkUpdate() {
+  try {
+    const r = await api('/api/update/check');
+    if (r.hasUpdate) {
+      updateTag = r.latest;
+      $('btn-update').textContent = '发现新版本 ' + r.latest + '，点击更新';
+      show($('btn-update'), true);
+    }
+  } catch {} // 检查失败静默：更新入口是锦上添花，不打扰正常使用
+}
+$('btn-update').onclick = async () => {
+  if (!confirm('将面板与点歌机器人更新到 ' + updateTag + '：\n· 语音服务器不受影响，开黑不断线\n· 更新完成后需要重新登录面板\n\n开始更新？')) return;
+  const btn = $('btn-update');
+  btn.disabled = true; btn.textContent = '正在下载更新…';
+  const oldVer = $('ver').textContent;
+  try {
+    const r = await api('/api/update/apply', {});
+    setMsg($('msg'), r.message, false);
+    btn.textContent = '面板重启中，稍候自动刷新…';
+    clearInterval(pollTimer); // 重启窗口期停掉状态轮询，避免误报错误
+    const t = setInterval(async () => {
+      try {
+        const v = await api('/api/version');
+        if (v.version && v.version !== oldVer) { clearInterval(t); location.reload(); }
+      } catch {} // 面板重启中，连不上属预期
+    }, 2000);
+  } catch (e) {
+    setMsg($('msg'), e.message, true);
+    btn.disabled = false; btn.textContent = '发现新版本 ' + updateTag + '，点击更新';
+  }
+};
 
 // 网易云扫码
 $('btn-netease-login').onclick = async () => {

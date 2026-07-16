@@ -146,7 +146,12 @@ EOF
 # 机器人只注册不启动:要不要点歌机器人由用户在面板里自己选择
 chown -R "${RUN_USER}:${RUN_USER}" "${BASE_DIR}"
 systemctl daemon-reload
-systemctl enable --now ts3panel
+# restart 而非 enable --now:重复执行本脚本即升级,已在运行的老版本必须重启才生效
+systemctl enable ts3panel >/dev/null 2>&1
+systemctl restart ts3panel
+if systemctl is-active --quiet tsmusicbot 2>/dev/null; then
+  systemctl restart tsmusicbot
+fi
 
 PUBLIC_IP=$(curl -fsSL --max-time 5 https://ipinfo.io/ip 2>/dev/null || hostname -I | awk '{print $1}')
 echo ""
@@ -155,4 +160,7 @@ info "接下来:"
 info "  1. 在云控制台防火墙/安全组放行: TCP ${PANEL_PORT}(面板)、UDP 9987(语音)、TCP 30033(文件传输)"
 info "  2. 浏览器打开: http://${PUBLIC_IP}:${PANEL_PORT}"
 info "  3. 设置面板密码 → 同意协议安装 TS3 服务器 → 启动 → 开黑!"
-[ "${BOT_INSTALLED}" -eq 1 ] && info "  点歌机器人已装好但默认关闭,想要的话在面板「点歌台」一键启用"
+# 用 if 而非 && 短路:机器人未安装时不能让脚本以非零退出码结束(curl|bash 会误报失败)
+if [ "${BOT_INSTALLED}" -eq 1 ]; then
+  info "  点歌机器人已装好但默认关闭,想要的话在面板「点歌台」一键启用"
+fi

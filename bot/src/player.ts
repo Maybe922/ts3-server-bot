@@ -31,6 +31,8 @@ export interface PlayerStatus {
   paused: boolean;
   /** 是否有可回退的上一首 */
   hasPrevious: boolean;
+  /** 当前曲目已播放时长（毫秒），无播放为 0 */
+  positionMs: number;
   current: Track | null;
   queue: Track[];
   volume: number;
@@ -48,6 +50,8 @@ export class Player {
   private ffmpeg: ChildProcess | null = null;
   private download: Readable | null = null;
   private pcmBuffer: Buffer = Buffer.alloc(0);
+  // 已发送的音频帧数——每帧恒定 20ms，帧数×20 即精确播放进度，暂停时自然停走
+  private playedFrames = 0;
   private ffmpegDone = false;
   private stalledSince = 0;
   private nextFrameAt = 0;
@@ -90,6 +94,7 @@ export class Player {
       playing: this.current !== null,
       paused: this.paused,
       hasPrevious: this.history.length > 0,
+      positionMs: this.current ? this.playedFrames * FRAME_MS : 0,
       current: this.current,
       queue: [...this.queue],
       volume: this.volume,
@@ -243,6 +248,7 @@ export class Player {
 
   private startFfmpeg(source: ReadableStream<Uint8Array>): void {
     this.pcmBuffer = Buffer.alloc(0);
+    this.playedFrames = 0;
     this.ffmpegDone = false;
     this.stalledSince = 0;
     const ff = spawn(ffmpegPath as unknown as string, [
@@ -295,6 +301,7 @@ export class Player {
           this.ffmpeg?.stdout?.resume();
         }
         this.ts.sendOpusFrame(this.encoder.encode(this.applyGain(pcm)));
+        this.playedFrames++;
         this.nextFrameAt += FRAME_MS;
         this.stalledSince = 0;
       } else if (this.ffmpegDone) {
@@ -342,5 +349,6 @@ export class Player {
     this.ffmpeg = null;
     this.current = null;
     this.pcmBuffer = Buffer.alloc(0);
+    this.playedFrames = 0;
   }
 }

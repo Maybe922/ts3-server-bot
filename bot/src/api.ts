@@ -24,7 +24,13 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
       case "GET /status":
         return send(res, 200, {
           success: true,
-          data: { connected: ts.connected, nickname: config.nickname, ...player.status() },
+          data: {
+            connected: ts.connected,
+            connectFailures: ts.connectFailures,
+            nickname: config.nickname,
+            serverPasswordSet: config.serverPassword !== "",
+            ...player.status(),
+          },
         });
       case "POST /nickname": {
         const { name } = await body(req);
@@ -38,10 +44,29 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
         saveConfig(config);
         return send(res, 200, { success: true, data: { message: `机器人已改名「${trimmed}」` } });
       }
+      case "POST /serverpassword": {
+        // TS 服务器的连接密码。守护循环每次重连现读 config，保存后下一轮重试（≤5s）即生效
+        const { password } = await body(req);
+        const pw = String(password ?? "");
+        if (pw.length > 128) {
+          return send(res, 400, { success: false, error: "密码过长" });
+        }
+        config.serverPassword = pw;
+        saveConfig(config);
+        return send(res, 200, {
+          success: true,
+          data: { message: pw ? "已保存服务器密码，机器人稍后自动重连" : "已清除服务器密码" },
+        });
+      }
       case "POST /search": {
-        const { keyword } = await body(req);
+        const { keyword, page } = await body(req);
         if (!keyword) return send(res, 400, { success: false, error: "缺少关键词" });
-        return send(res, 200, { success: true, data: await search(String(keyword)) });
+        const pageNum = Math.max(1, Math.floor(Number(page) || 1));
+        const result = await search(String(keyword), pageNum);
+        return send(res, 200, {
+          success: true,
+          data: { songs: result.tracks, page: pageNum, hasMore: result.hasMore },
+        });
       }
       case "POST /play": {
         const { id, name, artist, durationMs } = await body(req);

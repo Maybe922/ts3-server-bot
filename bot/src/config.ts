@@ -11,6 +11,8 @@ export interface BotConfig {
   serverHost: string;
   serverPort: number;
   nickname: string;
+  /** TS 服务器的连接密码（服主在 TS 客户端里设置的那个），空表示无密码 */
+  serverPassword: string;
   /** 进服后加入的频道，空则待在默认频道 */
   defaultChannel: string;
   /** 控制 API 监听端口（仅绑定本机回环，面板代理访问） */
@@ -23,6 +25,7 @@ const defaults: BotConfig = {
   serverHost: "127.0.0.1",
   serverPort: 9987,
   nickname: "点歌姬",
+  serverPassword: "",
   defaultChannel: "",
   apiPort: 3310,
   apiToken: "",

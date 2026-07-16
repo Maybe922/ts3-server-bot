@@ -39,6 +39,7 @@ export class TSClient {
   private client: Client | null = null;
   private config: BotConfig;
   private stopped = false;
+  private failures = 0;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -46,6 +47,11 @@ export class TSClient {
 
   get connected(): boolean {
     return this.client !== null;
+  }
+
+  /** 连续连接失败的次数，连上后归零。面板据此提示用户排查（如服务器密码）。 */
+  get connectFailures(): number {
+    return this.failures;
   }
 
   /** 单一守护循环：连接 → 驻留至断开 → 等待 → 重连。
@@ -56,6 +62,7 @@ export class TSClient {
       try {
         await this.runSession();
       } catch (err) {
+        this.failures++;
         console.error(`连接失败: ${(err as Error).message}，${RECONNECT_DELAY_MS / 1000}s 后重试`);
       }
       if (!this.stopped) {
@@ -66,10 +73,12 @@ export class TSClient {
 
   /** 建立一次连接并驻留，直到断开才返回。 */
   private async runSession(): Promise<void> {
-    const { serverHost, serverPort, nickname, defaultChannel } = this.config;
+    const { serverHost, serverPort, nickname, defaultChannel, serverPassword } = this.config;
     const addr = serverPort === 9987 ? serverHost : `${serverHost}:${serverPort}`;
     const client = new Client(loadIdentity(), addr, nickname, {
       defaultChannel: defaultChannel || undefined,
+      // 服务器设了连接密码时必须带上，否则服务端拒绝（error 1028）且协议库不上报
+      serverPassword: serverPassword || undefined,
     });
 
     // 断开信号：无论发生在握手期还是稳定期，都由本循环统一收尾
@@ -88,6 +97,7 @@ export class TSClient {
       throw err;
     }
     this.client = client;
+    this.failures = 0;
     console.log(`已连接 ${addr}，昵称「${nickname}」`);
     await ended; // 驻留至断开
     this.client = null;

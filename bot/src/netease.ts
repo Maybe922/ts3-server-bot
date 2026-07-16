@@ -16,16 +16,27 @@ export interface Track {
   durationMs: number;
 }
 
-export async function search(keyword: string, limit = 10): Promise<Track[]> {
-  const res = await api.cloudsearch({ keywords: keyword, limit, cookie });
+export interface SearchPage {
+  tracks: Track[];
+  /** 后面还有没有更多页（按结果总数推算） */
+  hasMore: boolean;
+}
+
+export async function search(keyword: string, page = 1, limit = 10): Promise<SearchPage> {
+  const offset = (page - 1) * limit;
+  const res = await api.cloudsearch({ keywords: keyword, limit, offset, cookie });
   const body = res.body as any;
   const songs = body?.result?.songs ?? [];
-  return songs.map((s: any) => ({
-    id: s.id,
-    name: s.name,
-    artist: (s.ar ?? []).map((a: any) => a.name).join("/") || "未知",
-    durationMs: s.dt ?? 0,
-  }));
+  const total = Number(body?.result?.songCount ?? 0);
+  return {
+    tracks: songs.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      artist: (s.ar ?? []).map((a: any) => a.name).join("/") || "未知",
+      durationMs: s.dt ?? 0,
+    })),
+    hasMore: offset + songs.length < total,
+  };
 }
 
 export async function streamUrl(id: number): Promise<string> {
