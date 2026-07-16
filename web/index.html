@@ -69,14 +69,27 @@
   .card.narrow { width: min(26rem, 95vw); }
   .card-pad { padding: clamp(1.5rem, 4vw, 2.5rem); }
 
-  /* 主面板上下结构:点歌台在上,服务器信息在下 */
-  main#view-main { width: min(46rem, 95vw); }
-  .cols { display: flex; flex-direction: column; }
-  .cols > .col { min-width: 0; }
-  .cols > .col + .col { border-top: 1px solid var(--border-soft); padding-top: 1.5rem; margin-top: 1.5rem; }
+  /* 主面板:纵向卡片流,点歌台在上;每张卡用原生 details/summary 折叠 */
+  main#view-main { width: min(46rem, 95vw); display: flex; flex-direction: column; gap: 1rem; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.4rem; }
+  .page-msg { padding: 0 .35rem; }
+
+  .sect > summary {
+    display: flex; align-items: center; gap: .65rem; flex-wrap: wrap;
+    padding: 1rem 1.4rem; cursor: pointer; user-select: none;
+    list-style: none; border-radius: var(--radius);
+    transition: background .15s;
+  }
+  .sect > summary::-webkit-details-marker { display: none; }
+  .sect > summary:hover { background: var(--surface-2); }
+  .sect[open] > summary { border-radius: var(--radius) var(--radius) 0 0; }
+  .sect-title { font-size: .9375rem; font-weight: 600; }
+  .sp { flex: 1; }
+  .chev { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-faint); transition: transform .25s; }
+  details[open] > summary .chev { transform: rotate(180deg); }
+  .sect-body { padding: .25rem 1.4rem 1.4rem; }
 
   /* Header */
-  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
   .brand h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -.01em; }
   .brand h1 b { color: var(--accent); font-weight: 700; }
   .brand p { color: var(--text-dim); font-size: .875rem; margin-top: .25rem; }
@@ -187,8 +200,11 @@
   .server-name { display: flex; align-items: baseline; gap: .75rem; }
   .server-name strong { font-size: 1.125rem; overflow-wrap: anywhere; }
 
-  /* Credentials */
-  .creds { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 12px; padding: 1rem 1.15rem; display: flex; flex-direction: column; gap: .65rem; }
+  /* Credentials:可折叠,默认收起(密钥不常驻屏幕) */
+  .creds { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 12px; padding: 1rem 1.15rem; }
+  .creds > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; user-select: none; list-style: none; }
+  .creds > summary::-webkit-details-marker { display: none; }
+  .creds-body { display: flex; flex-direction: column; gap: .65rem; margin-top: .75rem; }
   .creds .warn-title { font-size: .8125rem; font-weight: 600; color: var(--warn); }
   .creds .row { display: flex; flex-direction: column; gap: .25rem; }
   .creds .lbl { font-size: .75rem; color: var(--text-dim); }
@@ -270,30 +286,35 @@
   </div>
 </main>
 
-<!-- 主面板 -->
-<main class="card hidden" id="view-main">
-  <div class="card-pad">
-    <div class="head">
-      <div class="brand">
-        <h1>TS3 <b>Panel</b></h1>
-        <p>TeamSpeak 3 一键部署与管理</p>
-      </div>
-      <div class="head-actions">
-        <button class="theme-btn" id="theme-btn" title="切换深色/浅色主题" aria-label="切换深色/浅色主题">
-          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-        </button>
-        <button class="btn-ghost btn-sm" id="btn-logout">退出登录</button>
-      </div>
+<!-- 主面板:纵向卡片流,每张卡可折叠 -->
+<main class="hidden" id="view-main">
+  <div class="card topbar">
+    <div class="brand">
+      <h1>TS3 <b>Panel</b></h1>
+      <p>TeamSpeak 3 一键部署与管理</p>
     </div>
+    <div class="head-actions">
+      <button class="theme-btn" id="theme-btn" title="切换深色/浅色主题" aria-label="切换深色/浅色主题">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+      <button class="btn-ghost btn-sm" id="btn-logout">退出登录</button>
+    </div>
+  </div>
 
-    <hr class="divider">
+  <!-- 全局操作反馈:放在卡片之外,折叠任何卡都不会看不见 -->
+  <p class="msg page-msg" id="msg"></p>
 
-    <div class="cols">
-    <!-- 上:点歌台 -->
-    <div class="col">
-    <section id="music">
-      <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未启用</span> <button class="btn-ghost btn-sm hidden" id="btn-bot-off">停用机器人</button></h2>
+  <!-- 卡片一:点歌台 -->
+  <details class="card sect" id="sect-music" data-remember open>
+    <summary>
+      <span class="sect-title">点歌台</span>
+      <span class="chip off" id="bot-chip"><span class="dot"></span>未启用</span>
+      <button class="btn-ghost btn-sm hidden" id="btn-bot-off">停用机器人</button>
+      <span class="sp"></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </summary>
+    <div class="sect-body stack">
       <div id="bot-offer" class="hidden">
         <p class="hint">点歌机器人是可选的：启用后「点歌姬」会自动进入你的服务器，随时可以停用。</p>
         <button class="btn-primary btn-block" id="btn-bot-start">启用点歌机器人</button>
@@ -338,17 +359,19 @@
           <button class="btn-outline btn-sm" id="btn-shuffle">打乱队列</button>
         </div>
       </div>
-    </section>
-    </div><!-- /点歌台 -->
+    </div>
+  </details>
 
-    <!-- 下:服务器 -->
-    <div class="col">
-    <div class="kv"><span class="k">面板版本</span><span class="v" id="ver">…</span></div>
-
-    <!-- 服务器 -->
-    <div class="kv"><span class="k">TS3 服务器</span><span id="srv-chip"></span></div>
-
-    <div class="stack" style="margin-top:.75rem">
+  <!-- 卡片二:服务器(版本/启停/凭据) -->
+  <details class="card sect" id="sect-server" data-remember open>
+    <summary>
+      <span class="sect-title">服务器</span>
+      <span id="srv-chip"></span>
+      <span class="sp"></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </summary>
+    <div class="sect-body stack">
+      <div class="kv"><span class="k">面板版本</span><span class="v" id="ver">…</span></div>
       <div id="install-block" class="hidden stack">
         <label class="check">
           <input type="checkbox" id="eula">
@@ -360,19 +383,22 @@
       </div>
       <button class="btn-primary btn-block hidden" id="btn-start">启动服务器</button>
       <button class="btn-danger btn-block hidden" id="btn-stop">停止服务器</button>
-      <p class="msg" id="msg"></p>
-    </div>
+      <!-- 凭据:默认收起,密钥不常驻屏幕 -->
+      <details class="creds hidden" id="creds" data-remember>
+        <summary>
+          <span class="warn-title">⚠ 管理凭据（请妥善保存）</span>
+          <span class="sp"></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="creds-body">
+          <div class="row"><span class="lbl">连接地址</span><code id="c-addr">…</code></div>
+          <div class="row"><span class="lbl">管理员密钥 Token</span><code id="c-token">…</code></div>
+          <div class="row"><span class="lbl">Query 账号</span><code id="c-query">…</code></div>
+        </div>
+      </details>
 
-    <!-- 凭据 -->
-    <div class="creds hidden" id="creds" style="margin-top:.5rem">
-      <span class="warn-title">⚠ 管理凭据（请妥善保存）</span>
-      <div class="row"><span class="lbl">连接地址</span><code id="c-addr">…</code></div>
-      <div class="row"><span class="lbl">管理员密钥 Token</span><code id="c-token">…</code></div>
-      <div class="row"><span class="lbl">Query 账号</span><code id="c-query">…</code></div>
-    </div>
-
-    <!-- 运维 -->
-    <div id="ops" class="hidden">
+      <!-- 运维:服务器运行时才显示,与上方启停/凭据同卡 -->
+      <div id="ops" class="hidden">
       <hr class="divider">
       <section>
         <h2>服务器概览</h2>
@@ -396,15 +422,13 @@
         <h2>在线用户</h2>
         <div class="list" id="client-list"></div>
       </section>
+      </div>
     </div>
-    </div><!-- /服务器 -->
-    </div><!-- /cols -->
+  </details>
 
-    <hr class="divider">
-    <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板
-      <button class="btn-outline btn-sm hidden" id="btn-update" style="margin-left:.75rem"></button>
-    </p>
-  </div>
+  <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板
+    <button class="btn-outline btn-sm hidden" id="btn-update" style="margin-left:.75rem"></button>
+  </p>
 </main>
 
 <!-- 扫码弹窗 -->
@@ -796,6 +820,16 @@ $('btn-netease-logout').onclick = async () => {
   if (!confirm('退出网易云账号？VIP 歌曲将无法播放。')) return;
   try { await api('/api/bot/netease/logout', {}); refreshNetease(); } catch (e) { setMsg($('msg'), e.message, true); }
 };
+
+// —— 卡片折叠:记住每张卡的开合状态;标题行里的按钮(如停用机器人)不触发折叠 ——
+document.querySelectorAll('details[data-remember]').forEach(d => {
+  const key = 'ts3panel-fold-' + d.id;
+  const saved = localStorage.getItem(key);
+  if (saved !== null) d.open = saved === '1';
+  d.addEventListener('toggle', () => localStorage.setItem(key, d.open ? '1' : '0'));
+});
+document.querySelectorAll('summary button').forEach(b =>
+  b.addEventListener('click', e => e.preventDefault()));
 
 boot();
 </script>
