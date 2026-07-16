@@ -69,16 +69,11 @@
   .card.narrow { width: min(26rem, 95vw); }
   .card-pad { padding: clamp(1.5rem, 4vw, 2.5rem); }
 
-  /* 主面板双栏:左服务器右点歌台,窄屏回退单列 */
-  main#view-main { width: min(72rem, 95vw); }
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 3rem; position: relative; align-items: start; }
+  /* 主面板上下结构:点歌台在上,服务器信息在下 */
+  main#view-main { width: min(46rem, 95vw); }
+  .cols { display: flex; flex-direction: column; }
   .cols > .col { min-width: 0; }
-  .cols::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--border-soft); }
-  @media (max-width: 920px) {
-    .cols { grid-template-columns: 1fr; }
-    .cols::before { display: none; }
-    .cols > .col + .col { border-top: 1px solid var(--border-soft); padding-top: 1.5rem; margin-top: 1.5rem; }
-  }
+  .cols > .col + .col { border-top: 1px solid var(--border-soft); padding-top: 1.5rem; margin-top: 1.5rem; }
 
   /* Header */
   .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
@@ -295,7 +290,58 @@
     <hr class="divider">
 
     <div class="cols">
-    <!-- 左栏:服务器 -->
+    <!-- 上:点歌台 -->
+    <div class="col">
+    <section id="music">
+      <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未启用</span> <button class="btn-ghost btn-sm hidden" id="btn-bot-off">停用机器人</button></h2>
+      <div id="bot-offer" class="hidden">
+        <p class="hint">点歌机器人是可选的：启用后「点歌姬」会自动进入你的服务器，随时可以停用。</p>
+        <button class="btn-primary btn-block" id="btn-bot-start">启用点歌机器人</button>
+      </div>
+      <div id="music-body" class="hidden stack">
+        <div class="item" style="padding-left:0">
+          <span class="grow meta" id="bot-name">机器人昵称：…</span>
+          <button class="btn-outline btn-sm" id="btn-bot-rename">改名</button>
+        </div>
+        <div class="item" style="padding-left:0">
+          <span class="grow meta" id="srv-pw">服务器密码：…</span>
+          <button class="btn-outline btn-sm" id="btn-srv-pw">设置</button>
+        </div>
+        <div class="item" style="padding-left:0">
+          <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
+          <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
+          <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
+        </div>
+        <div class="now">
+          <span class="title" id="now-playing">没有正在播放的歌曲</span>
+          <button class="btn-outline btn-sm ctrl" id="btn-prev" title="上一首">⏮</button>
+          <button class="btn-outline btn-sm ctrl" id="btn-pause" title="暂停 / 继续">⏸</button>
+          <button class="btn-outline btn-sm ctrl" id="btn-skip" title="下一首">⏭</button>
+          <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
+        </div>
+        <div class="progress hidden" id="prog">
+          <div class="bar"><div class="fill" id="prog-fill"></div></div>
+          <span class="time" id="prog-time">0:00 / 0:00</span>
+        </div>
+        <p class="notice hidden" id="player-notice"></p>
+        <div class="vol">
+          <span class="lbl">音量</span>
+          <input type="range" id="vol" min="0" max="100" step="5">
+          <span class="num" id="vol-num">60</span>
+        </div>
+        <div class="list" id="music-queue"></div>
+        <div class="inline"><input type="text" id="song-kw" placeholder="搜索歌曲（网易云）" maxlength="60"><button class="btn-primary btn-sm" id="btn-song-search">搜索</button></div>
+        <div class="list" id="song-results"></div>
+        <div class="inline">
+          <input type="text" id="playlist-input" placeholder="粘贴网易云歌单链接或 ID，整单播放" maxlength="200">
+          <button class="btn-primary btn-sm" id="btn-playlist">播放歌单</button>
+          <button class="btn-outline btn-sm" id="btn-shuffle">打乱队列</button>
+        </div>
+      </div>
+    </section>
+    </div><!-- /点歌台 -->
+
+    <!-- 下:服务器 -->
     <div class="col">
     <div class="kv"><span class="k">面板版本</span><span class="v" id="ver">…</span></div>
 
@@ -351,58 +397,7 @@
         <div class="list" id="client-list"></div>
       </section>
     </div>
-    </div><!-- /左栏 -->
-
-    <!-- 右栏:点歌台 -->
-    <div class="col">
-    <section id="music">
-      <h2>点歌台 <span class="chip off" id="bot-chip"><span class="dot"></span>未启用</span> <button class="btn-ghost btn-sm hidden" id="btn-bot-off">停用机器人</button></h2>
-      <div id="bot-offer" class="hidden">
-        <p class="hint">点歌机器人是可选的：启用后「点歌姬」会自动进入你的服务器，随时可以停用。</p>
-        <button class="btn-primary btn-block" id="btn-bot-start">启用点歌机器人</button>
-      </div>
-      <div id="music-body" class="hidden stack">
-        <div class="item" style="padding-left:0">
-          <span class="grow meta" id="bot-name">机器人昵称：…</span>
-          <button class="btn-outline btn-sm" id="btn-bot-rename">改名</button>
-        </div>
-        <div class="item" style="padding-left:0">
-          <span class="grow meta" id="srv-pw">服务器密码：…</span>
-          <button class="btn-outline btn-sm" id="btn-srv-pw">设置</button>
-        </div>
-        <div class="item" style="padding-left:0">
-          <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
-          <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
-          <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
-        </div>
-        <div class="now">
-          <span class="title" id="now-playing">没有正在播放的歌曲</span>
-          <button class="btn-outline btn-sm ctrl" id="btn-prev" title="上一首">⏮</button>
-          <button class="btn-outline btn-sm ctrl" id="btn-pause" title="暂停 / 继续">⏸</button>
-          <button class="btn-outline btn-sm ctrl" id="btn-skip" title="下一首">⏭</button>
-          <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
-        </div>
-        <div class="progress hidden" id="prog">
-          <div class="bar"><div class="fill" id="prog-fill"></div></div>
-          <span class="time" id="prog-time">0:00 / 0:00</span>
-        </div>
-        <p class="notice hidden" id="player-notice"></p>
-        <div class="vol">
-          <span class="lbl">音量</span>
-          <input type="range" id="vol" min="0" max="100" step="5">
-          <span class="num" id="vol-num">60</span>
-        </div>
-        <div class="list" id="music-queue"></div>
-        <div class="inline"><input type="text" id="song-kw" placeholder="搜索歌曲（网易云）" maxlength="60"><button class="btn-primary btn-sm" id="btn-song-search">搜索</button></div>
-        <div class="list" id="song-results"></div>
-        <div class="inline">
-          <input type="text" id="playlist-input" placeholder="粘贴网易云歌单链接或 ID，整单播放" maxlength="200">
-          <button class="btn-primary btn-sm" id="btn-playlist">播放歌单</button>
-          <button class="btn-outline btn-sm" id="btn-shuffle">打乱队列</button>
-        </div>
-      </div>
-    </section>
-    </div><!-- /右栏 -->
+    </div><!-- /服务器 -->
     </div><!-- /cols -->
 
     <hr class="divider">
