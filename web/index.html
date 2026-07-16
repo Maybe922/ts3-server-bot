@@ -71,7 +71,13 @@
 
   /* 主面板:纵向卡片流,点歌台在上;每张卡用原生 details/summary 折叠 */
   main#view-main { width: min(46rem, 95vw); display: flex; flex-direction: column; gap: 1rem; }
-  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.4rem; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 1rem 1.4rem; }
+  /* 顶栏更新入口:蓝色胶囊,一进页面就能看见 */
+  #btn-update {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 999px;
+  }
+  #btn-update:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); }
   .page-msg { padding: 0 .35rem; }
 
   .sect > summary {
@@ -294,6 +300,7 @@
       <p>TeamSpeak 3 一键部署与管理</p>
     </div>
     <div class="head-actions">
+      <button class="btn-outline btn-sm hidden" id="btn-update"></button>
       <button class="theme-btn" id="theme-btn" title="切换深色/浅色主题" aria-label="切换深色/浅色主题">
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
@@ -426,9 +433,7 @@
     </div>
   </details>
 
-  <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板
-    <button class="btn-outline btn-sm hidden" id="btn-update" style="margin-left:.75rem"></button>
-  </p>
+  <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板</p>
 </main>
 
 <!-- 扫码弹窗 -->
@@ -772,11 +777,13 @@ async function checkUpdate() {
     const r = await api('/api/update/check');
     if (r.hasUpdate) {
       updateTag = r.latest;
-      $('btn-update').textContent = '发现新版本 ' + r.latest + '，点击更新';
+      $('btn-update').textContent = '更新到 ' + r.latest;
       show($('btn-update'), true);
     }
   } catch {} // 检查失败静默：更新入口是锦上添花，不打扰正常使用
 }
+// 面板常开也能自动发现新版本:每 30 分钟复查一次(服务端另有短缓存挡高频)
+setInterval(checkUpdate, 30 * 60 * 1000);
 $('btn-update').onclick = async () => {
   if (!confirm('将面板与点歌机器人更新到 ' + updateTag + '：\n· 语音服务器不受影响，开黑不断线\n· 更新完成后需要重新登录面板\n\n开始更新？')) return;
   const btn = $('btn-update');
@@ -795,7 +802,7 @@ $('btn-update').onclick = async () => {
     }, 2000);
   } catch (e) {
     setMsg($('msg'), e.message, true);
-    btn.disabled = false; btn.textContent = '发现新版本 ' + updateTag + '，点击更新';
+    btn.disabled = false; btn.textContent = '更新到 ' + updateTag;
   }
 };
 

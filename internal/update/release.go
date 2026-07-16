@@ -21,8 +21,8 @@ const (
 	giteeAPIURL   = "https://gitee.com/api/v5/repos/wushuangqq/ts3-server-bo/releases/latest"
 	giteeDLBase   = "https://gitee.com/wushuangqq/ts3-server-bo/releases/download"
 
-	// 版本检查结果缓存时长（每面板每小时至多一次真实外网请求）
-	checkTTL     = time.Hour
+	// 版本检查结果缓存时长:只为挡住高频刷新,保证发版后尽快被发现
+	checkTTL     = 5 * time.Minute
 	probeTimeout = 10 * time.Second
 )
 
