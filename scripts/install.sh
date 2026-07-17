@@ -85,6 +85,12 @@ if [ "${ARCH}" = "amd64" ] && command -v node >/dev/null; then
   info "[3/3] 下载点歌机器人..."
   if curl -fsSL -o /tmp/tsmusicbot.tar.gz "${DOWNLOAD_BASE}/tsmusicbot_linux_amd64.tar.gz"; then
     mkdir -p "${BOT_DIR}"
+    # 机器人在跑(可能正在放歌)先停下:覆盖正在执行的 ffmpeg/node 会报 text file busy
+    BOT_WAS_ACTIVE=0
+    if systemctl is-active --quiet tsmusicbot 2>/dev/null; then
+      BOT_WAS_ACTIVE=1
+      systemctl stop tsmusicbot || true
+    fi
     tar -xzf /tmp/tsmusicbot.tar.gz -C "${BOT_DIR}"
     # 记录 tarball 校验和:面板一键更新据此跳过未变化的 bot,不打断正在播的音乐
     sha256sum /tmp/tsmusicbot.tar.gz | awk '{print $1}' > "${BOT_DIR}/.release.sha256"
@@ -151,7 +157,8 @@ systemctl daemon-reload
 # restart 而非 enable --now:重复执行本脚本即升级,已在运行的老版本必须重启才生效
 systemctl enable ts3panel >/dev/null 2>&1
 systemctl restart ts3panel
-if systemctl is-active --quiet tsmusicbot 2>/dev/null; then
+# 解压前被我们停掉的 bot 要拉回来;本来就在跑的(老流程)也照旧重启生效
+if [ "${BOT_WAS_ACTIVE:-0}" -eq 1 ] || systemctl is-active --quiet tsmusicbot 2>/dev/null; then
   systemctl restart tsmusicbot
 fi
 

@@ -77,6 +77,11 @@ func (u *Updater) Apply(ctx context.Context) (string, error) {
 	if updateBot && installedBotSum(u.botDir) == sums[botAsset] {
 		updateBot = false
 	}
+	// 产品约定:更新涉及机器人组件时必须先停用——由服主自己挑打断音乐的时机,
+	// 也不在放歌进程脚下换文件。趁还没下载就拦下,失败得快
+	if updateBot && unitActive(botUnitName) {
+		return "", errors.New("本次更新包含点歌机器人组件，请先在点歌台「停用机器人」，更新完成后再启用（队列会保留）")
+	}
 	var botTmp string
 	if updateBot {
 		if botTmp, err = downloadVerified(ctx, rel.base+"/"+botAsset, sums[botAsset], os.TempDir()); err != nil {
@@ -85,29 +90,12 @@ func (u *Updater) Apply(ctx context.Context) (string, error) {
 		defer os.Remove(botTmp)
 	}
 
-	// —— 资产全部就绪，开始落地 ——
+	// —— 资产全部就绪，开始落地（bot 此刻必然处于停用状态，见上方拦截）——
 	if updateBot {
-		botWasRunning := unitActive(botUnitName)
-		// 先停后换：运行中的 Node 已 mmap 原生模块(opus),原地覆盖可能让它直接崩溃;
-		// stop 还会触发 bot 的 shutdown() 把队列干净落盘
-		if botWasRunning {
-			if err := systemctl("stop", botUnitName); err != nil {
-				return "", err
-			}
+		if err := extractBot(botTmp, u.botDir); err != nil {
+			return "", fmt.Errorf("更新机器人失败: %w", err)
 		}
-		extractErr := extractBot(botTmp, u.botDir)
-		if extractErr == nil {
-			writeBotSum(u.botDir, sums[botAsset])
-		}
-		// 用户"要不要机器人"的选择不变：原本在跑就拉回来,解压失败也尽力恢复运行
-		if botWasRunning {
-			if err := systemctl("start", botUnitName); err != nil && extractErr == nil {
-				return "", err
-			}
-		}
-		if extractErr != nil {
-			return "", fmt.Errorf("更新机器人失败: %w", extractErr)
-		}
+		writeBotSum(u.botDir, sums[botAsset])
 	}
 
 	// 面板二进制原地替换，旧版本留作 .old 便于手动回滚
@@ -258,15 +246,27 @@ func extractBot(archive, dest string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, hdr.FileInfo().Mode())
+			// 写临时文件再 rename:目标可能是正在执行的二进制(如放歌中的 ffmpeg),
+			// 原地 O_TRUNC 会报 ETXTBSY(text file busy),rename 换 inode 则永远可行
+			out, err := os.CreateTemp(filepath.Dir(target), ".extract-*")
 			if err != nil {
 				return err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
+				os.Remove(out.Name())
+				return err
+			}
+			if err := out.Chmod(hdr.FileInfo().Mode()); err != nil {
+				out.Close()
+				os.Remove(out.Name())
 				return err
 			}
 			out.Close()
+			if err := os.Rename(out.Name(), target); err != nil {
+				os.Remove(out.Name())
+				return err
+			}
 		default:
 			continue
 		}
@@ -320,12 +320,4 @@ func unitActive(name string) bool {
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-func systemctl(args ...string) error {
-	out, err := exec.Command("systemctl", args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("systemctl %s 失败: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
-	}
-	return nil
 }
