@@ -257,6 +257,33 @@
   .pager .pg { flex: 1; text-align: center; color: var(--text-faint); font-size: .8125rem; }
   .pager button:disabled { opacity: .35; cursor: not-allowed; }
 
+  /* 队列分组:组头带总数,列表限高内部滚动,几百首也不撑长页面 */
+  .group-head {
+    display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; padding: 0 .1rem;
+    font-size: .8125rem; font-weight: 600; color: var(--text-faint);
+  }
+  .group-head .count { font-weight: 400; }
+  .queue-box { max-height: 17.5rem; overflow-y: auto; overscroll-behavior: contain; }
+
+  /* 紧凑列表行(队列/搜索结果) */
+  .list.compact { gap: .125rem; }
+  .list.compact .item { padding: .35rem .6rem; font-size: .875rem; }
+
+  /* 搜索结果浮层:悬浮在搜索框下方,不再嵌在页面流里 */
+  .search-wrap { position: relative; }
+  .card.sect { overflow: visible; } /* 浮层允许伸出卡片边界 */
+  .dropdown {
+    position: absolute; top: calc(100% + .5rem); left: 0; right: 0; z-index: 20;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: .5rem;
+  }
+  .dropdown-head {
+    display: flex; align-items: center; gap: .5rem; padding: .15rem .35rem .4rem;
+    color: var(--text-dim); font-size: .8125rem;
+  }
+  .dropdown-head span:first-child { overflow-wrap: anywhere; }
+  .dropdown .list { max-height: min(19rem, 45vh); overflow-y: auto; overscroll-behavior: contain; }
+
   /* Volume */
   .vol { display: flex; align-items: center; gap: 1rem; }
   .vol .lbl { font-size: .8125rem; color: var(--text-dim); white-space: nowrap; }
@@ -368,14 +395,41 @@
           </div>
         </div>
         <p class="notice hidden" id="player-notice"></p>
-        <div class="list" id="music-queue"></div>
-        <div class="inline"><input type="text" id="song-kw" placeholder="搜索歌曲（网易云）" maxlength="60"><button class="btn-primary btn-sm" id="btn-song-search">搜索</button></div>
-        <div class="list" id="song-results"></div>
-        <div class="inline">
-          <input type="text" id="playlist-input" placeholder="粘贴网易云歌单链接或 ID，整单播放" maxlength="200">
-          <button class="btn-primary btn-sm" id="btn-playlist">播放歌单</button>
-          <button class="btn-outline btn-sm" id="btn-shuffle">打乱队列</button>
+        <!-- 队列:组头带总数,列表限高内部滚动 -->
+        <div>
+          <div class="group-head">
+            <span>播放队列</span><span class="count" id="q-count"></span>
+            <span class="sp"></span>
+            <button class="btn-ghost btn-sm" id="btn-shuffle">打乱</button>
+          </div>
+          <div class="list compact queue-box" id="music-queue"></div>
         </div>
+        <!-- 点歌:结果浮层挂在搜索框下,点 ✕ / 点别处 / Esc 收起 -->
+        <div class="search-wrap">
+          <div class="inline"><input type="text" id="song-kw" placeholder="搜索歌曲（网易云）" maxlength="60"><button class="btn-primary btn-sm" id="btn-song-search">搜索</button></div>
+          <div class="dropdown hidden" id="song-panel">
+            <div class="dropdown-head">
+              <span id="song-panel-title">搜索结果</span>
+              <span class="sp"></span>
+              <button class="btn-ghost btn-sm" id="song-panel-close" title="收起">✕</button>
+            </div>
+            <div class="list compact" id="song-results"></div>
+          </div>
+        </div>
+        <!-- 歌单导入是低频操作,折叠成一行 -->
+        <details class="subfold" id="playlist-fold" data-remember>
+          <summary>
+            <span>歌单导入</span>
+            <span class="sp"></span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="subfold-body">
+            <div class="inline">
+              <input type="text" id="playlist-input" placeholder="粘贴网易云歌单链接或 ID，整单播放" maxlength="200">
+              <button class="btn-primary btn-sm" id="btn-playlist">播放歌单</button>
+            </div>
+          </div>
+        </details>
         <!-- 低频设置折叠到底部,日常点歌零干扰 -->
         <details class="subfold" id="bot-settings" data-remember>
           <summary>
@@ -635,8 +689,9 @@ async function refreshBot() {
     $('player-notice').textContent = connHint || s.notice || '';
     show($('player-notice'), !!(connHint || s.notice));
     if (!volDragging) { $('vol').value = s.volume; $('vol-num').textContent = s.volume; }
+    $('q-count').textContent = s.queue.length ? '· 共 ' + s.queue.length + ' 首' : '';
     const q = $('music-queue'); q.replaceChildren();
-    const SHOWN = 8;
+    const SHOWN = 50; // 列表限高滚动,只渲染前 50 条控制 DOM 大小
     s.queue.slice(0, SHOWN).forEach((t, i) => {
       const d = document.createElement('div'); d.className = 'item';
       const g = document.createElement('span'); g.className = 'grow'; g.textContent = (i+1) + '. ' + t.name + ' - ' + t.artist;
@@ -647,7 +702,8 @@ async function refreshBot() {
       };
       d.appendChild(g); d.appendChild(rm); q.appendChild(d);
     });
-    if (s.queue.length > SHOWN) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '…队列中还有 ' + (s.queue.length - SHOWN) + ' 首，共 ' + s.queue.length + ' 首'; q.appendChild(d); }
+    if (!s.queue.length) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '队列是空的，搜索点歌或导入歌单吧'; q.appendChild(d); }
+    if (s.queue.length > SHOWN) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '…仅显示前 ' + SHOWN + ' 首'; q.appendChild(d); }
     if (first) refreshNetease();
     show($('bot-offer'), false);
     show($('btn-bot-off'), true);
@@ -758,6 +814,8 @@ async function searchSongs(page) {
   const box = $('song-results');
   try {
     const r = await api('/api/bot/search', { keyword: searchKw, page });
+    $('song-panel-title').textContent = '「' + searchKw + '」的搜索结果';
+    show($('song-panel'), true);
     fillList(box, r.songs, '没有找到歌曲', song => itemRow(song.name + ' - ' + song.artist,
       fmtTime(song.durationMs),
       '添加', 'btn-outline', async () => {
@@ -783,6 +841,13 @@ $('btn-song-search').onclick = () => {
   searchSongs(1);
 };
 $('song-kw').onkeydown = e => { if (e.key === 'Enter') $('btn-song-search').click(); };
+// 结果浮层收起:✕ / Esc / 点浮层外;搜索框重新聚焦时若还有结果就再展开
+$('song-panel-close').onclick = () => show($('song-panel'), false);
+document.addEventListener('click', e => {
+  if (!$('song-panel').classList.contains('hidden') && !e.target.closest('.search-wrap')) show($('song-panel'), false);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') show($('song-panel'), false); });
+$('song-kw').addEventListener('focus', () => { if ($('song-results').childElementCount) show($('song-panel'), true); });
 
 $('btn-playlist').onclick = async () => {
   const input = $('playlist-input').value.trim(); if (!input) return;
