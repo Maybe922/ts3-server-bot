@@ -24,6 +24,8 @@ const (
 	downloadTimeout = 5 * time.Minute
 	botUnitName     = "tsmusicbot.service"
 	panelUnitName   = "ts3panel.service"
+	// 已安装 bot 对应的 tarball 校验和标记:与新版一致时完全跳过 bot,不打断正在播的音乐
+	botSumFile = ".release.sha256"
 )
 
 // Apply 执行一次完整更新，成功返回新版本号。
@@ -71,6 +73,10 @@ func (u *Updater) Apply(ctx context.Context) (string, error) {
 	const botAsset = "tsmusicbot_linux_amd64.tar.gz"
 	updateBot := runtime.GOARCH == "amd64" && u.botDir != "" &&
 		unitExists(botUnitName) && sums[botAsset] != ""
+	// 新版 tarball 与已安装的完全一致(纯面板发版)→ 不解压不重启,音乐零打断
+	if updateBot && installedBotSum(u.botDir) == sums[botAsset] {
+		updateBot = false
+	}
 	var botTmp string
 	if updateBot {
 		if botTmp, err = downloadVerified(ctx, rel.base+"/"+botAsset, sums[botAsset], os.TempDir()); err != nil {
@@ -82,14 +88,25 @@ func (u *Updater) Apply(ctx context.Context) (string, error) {
 	// —— 资产全部就绪，开始落地 ——
 	if updateBot {
 		botWasRunning := unitActive(botUnitName)
-		if err := extractBot(botTmp, u.botDir); err != nil {
-			return "", fmt.Errorf("更新机器人失败: %w", err)
-		}
-		// 用户"要不要机器人"的选择不变：原本在跑才重启，停用状态只更新文件
+		// 先停后换：运行中的 Node 已 mmap 原生模块(opus),原地覆盖可能让它直接崩溃;
+		// stop 还会触发 bot 的 shutdown() 把队列干净落盘
 		if botWasRunning {
-			if err := systemctl("restart", botUnitName); err != nil {
+			if err := systemctl("stop", botUnitName); err != nil {
 				return "", err
 			}
+		}
+		extractErr := extractBot(botTmp, u.botDir)
+		if extractErr == nil {
+			writeBotSum(u.botDir, sums[botAsset])
+		}
+		// 用户"要不要机器人"的选择不变：原本在跑就拉回来,解压失败也尽力恢复运行
+		if botWasRunning {
+			if err := systemctl("start", botUnitName); err != nil && extractErr == nil {
+				return "", err
+			}
+		}
+		if extractErr != nil {
+			return "", fmt.Errorf("更新机器人失败: %w", extractErr)
 		}
 	}
 
@@ -255,6 +272,25 @@ func extractBot(archive, dest string) error {
 		}
 		if uid >= 0 {
 			os.Lchown(target, uid, gid)
+		}
+	}
+}
+
+// installedBotSum 读取已安装 bot 对应的 tarball 校验和；无标记（老版本装的）返回空，走正常更新。
+func installedBotSum(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, botSumFile))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// writeBotSum 记录本次落地的 tarball 校验和，供下次跳过未变化的 bot；写失败不致命。
+func writeBotSum(dir, sum string) {
+	path := filepath.Join(dir, botSumFile)
+	if err := os.WriteFile(path, []byte(sum+"\n"), 0o644); err == nil {
+		if uid, gid := dirOwner(dir); uid >= 0 {
+			os.Lchown(path, uid, gid)
 		}
 	}
 }

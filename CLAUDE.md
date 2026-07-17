@@ -73,4 +73,5 @@ TS3_MIRROR_TEST=1 go test ./internal/tsserver -run TestMirrorFallback -v
 - **TS3 服务器连接密码只在建连时校验，不踢在线客户端**——服主设密码后 bot"连着一切正常，掉线后永远回不去"。线上表现：服务器没事、bot 15s 超时无限重试。已发生过一次（v0.5.0 修复）
 - **@honeybbq/teamspeak-client 会静默吞掉无 return code 的 error 命令**（仅 id=3329 被 ban 有处理）——服务器在握手期的拒绝原因（如 error 1028 密码错误）全被吃掉，bot 只见超时。排障方法：把库 dist 复制出来在 `#k`（入站命令分发）加日志抓原始命令流。该库 `connect()` 失败路径还会泄漏 UDP socket（上游未修）
 - **面板自更新的自重启必须走 `systemd-run`（独立 cgroup）**：直接 exec `systemctl restart` 会在 systemd 停面板时连带杀掉子进程，重启永远完不成；兜底是非零退出交给 unit 的 `Restart=on-failure`
+- **更新 bot 必须"先 stop 再解压再 start"，且 tarball 没变就完全跳过**（比对 `bot/.release.sha256` 标记）：运行中的 Node 已 mmap 原生模块（opus），原地 O_TRUNC 覆盖可能让 bot 直接崩溃；bot 重启后队列会恢复但**不自动续播**（要点 ⏭），所以纯面板发版绝不该动 bot（v0.5.7 修复）
 - bot dist/*.js 平台无关，可直接 scp 到 VPS 热修（不用动 node_modules）；面板热修 = 换二进制 + `systemctl restart ts3panel`

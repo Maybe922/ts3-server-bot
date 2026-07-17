@@ -86,6 +86,8 @@ if [ "${ARCH}" = "amd64" ] && command -v node >/dev/null; then
   if curl -fsSL -o /tmp/tsmusicbot.tar.gz "${DOWNLOAD_BASE}/tsmusicbot_linux_amd64.tar.gz"; then
     mkdir -p "${BOT_DIR}"
     tar -xzf /tmp/tsmusicbot.tar.gz -C "${BOT_DIR}"
+    # 记录 tarball 校验和:面板一键更新据此跳过未变化的 bot,不打断正在播的音乐
+    sha256sum /tmp/tsmusicbot.tar.gz | awk '{print $1}' > "${BOT_DIR}/.release.sha256"
     rm -f /tmp/tsmusicbot.tar.gz
     # 生成机器人配置: 连本机 TS 服务器,控制 API 只绑回环
     mkdir -p "${BOT_DIR}/data"

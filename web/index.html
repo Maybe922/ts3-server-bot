@@ -884,7 +884,7 @@ async function checkUpdate() {
 // 面板常开也能自动发现新版本:每 30 分钟复查一次(服务端另有短缓存挡高频)
 setInterval(checkUpdate, 30 * 60 * 1000);
 $('btn-update').onclick = async () => {
-  if (!confirm('将面板与点歌机器人更新到 ' + updateTag + '：\n· 语音服务器不受影响，开黑不断线\n· 更新完成后需要重新登录面板\n\n开始更新？')) return;
+  if (!confirm('将面板与点歌机器人更新到 ' + updateTag + '：\n· 语音服务器不受影响，开黑不断线\n· 机器人组件如有变化会自动重启：音乐中断、队列保留，更新后点 ⏭ 继续播放\n· 更新完成后需要重新登录面板\n\n开始更新？')) return;
   const btn = $('btn-update');
   btn.disabled = true; btn.textContent = '正在下载更新…';
   const oldVer = $('ver').textContent;
