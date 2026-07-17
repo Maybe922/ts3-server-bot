@@ -223,6 +223,24 @@
     padding: .3rem .55rem; border-radius: 7px; user-select: all; overflow-x: auto; white-space: nowrap;
   }
 
+  /* 播放器面板:歌名/控制/进度/音量是一个整体 */
+  .player {
+    background: var(--surface-2); border: 1px solid var(--border-soft);
+    border-radius: 12px; padding: 1rem 1.15rem;
+    display: flex; flex-direction: column; gap: .875rem;
+  }
+  .player .bar { background: var(--bg-elev); } /* 面板同底色时进度槽换深一档 */
+
+  /* 卡内折叠小节(机器人设置) */
+  .subfold { border-top: 1px solid var(--border-soft); padding-top: .75rem; }
+  .subfold > summary {
+    display: flex; align-items: center; gap: .5rem; cursor: pointer; user-select: none;
+    list-style: none; font-size: .8125rem; color: var(--text-dim);
+  }
+  .subfold > summary::-webkit-details-marker { display: none; }
+  .subfold > summary:hover { color: var(--text); }
+  .subfold-body { margin-top: .5rem; display: flex; flex-direction: column; gap: .25rem; }
+
   /* Now playing */
   .now { display: flex; align-items: center; gap: 1rem; }
   .now .title { flex: 1; overflow-wrap: anywhere; }
@@ -330,36 +348,26 @@
         <button class="btn-primary btn-block" id="btn-bot-start">启用点歌机器人</button>
       </div>
       <div id="music-body" class="hidden stack">
-        <div class="item" style="padding-left:0">
-          <span class="grow meta" id="bot-name">机器人昵称：…</span>
-          <button class="btn-outline btn-sm" id="btn-bot-rename">改名</button>
-        </div>
-        <div class="item" style="padding-left:0">
-          <span class="grow meta" id="srv-pw">服务器密码：…</span>
-          <button class="btn-outline btn-sm" id="btn-srv-pw">设置</button>
-        </div>
-        <div class="item" style="padding-left:0">
-          <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
-          <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
-          <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
-        </div>
-        <div class="now">
-          <span class="title" id="now-playing">没有正在播放的歌曲</span>
-          <button class="btn-outline btn-sm ctrl" id="btn-prev" title="上一首">⏮</button>
-          <button class="btn-outline btn-sm ctrl" id="btn-pause" title="暂停 / 继续">⏸</button>
-          <button class="btn-outline btn-sm ctrl" id="btn-skip" title="下一首">⏭</button>
-          <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
-        </div>
-        <div class="progress hidden" id="prog">
-          <div class="bar"><div class="fill" id="prog-fill"></div></div>
-          <span class="time" id="prog-time">0:00 / 0:00</span>
+        <!-- 播放器:歌名/控制/进度/音量框成一个整体 -->
+        <div class="player">
+          <div class="now">
+            <span class="title" id="now-playing">没有正在播放的歌曲</span>
+            <button class="btn-outline btn-sm ctrl" id="btn-prev" title="上一首">⏮</button>
+            <button class="btn-outline btn-sm ctrl" id="btn-pause" title="暂停 / 继续">⏸</button>
+            <button class="btn-outline btn-sm ctrl" id="btn-skip" title="下一首">⏭</button>
+            <button class="btn-danger btn-sm" id="btn-music-stop">停止</button>
+          </div>
+          <div class="progress hidden" id="prog">
+            <div class="bar"><div class="fill" id="prog-fill"></div></div>
+            <span class="time" id="prog-time">0:00 / 0:00</span>
+          </div>
+          <div class="vol">
+            <span class="lbl">音量</span>
+            <input type="range" id="vol" min="0" max="100" step="5">
+            <span class="num" id="vol-num">60</span>
+          </div>
         </div>
         <p class="notice hidden" id="player-notice"></p>
-        <div class="vol">
-          <span class="lbl">音量</span>
-          <input type="range" id="vol" min="0" max="100" step="5">
-          <span class="num" id="vol-num">60</span>
-        </div>
         <div class="list" id="music-queue"></div>
         <div class="inline"><input type="text" id="song-kw" placeholder="搜索歌曲（网易云）" maxlength="60"><button class="btn-primary btn-sm" id="btn-song-search">搜索</button></div>
         <div class="list" id="song-results"></div>
@@ -368,6 +376,29 @@
           <button class="btn-primary btn-sm" id="btn-playlist">播放歌单</button>
           <button class="btn-outline btn-sm" id="btn-shuffle">打乱队列</button>
         </div>
+        <!-- 低频设置折叠到底部,日常点歌零干扰 -->
+        <details class="subfold" id="bot-settings" data-remember>
+          <summary>
+            <span>机器人设置</span>
+            <span class="sp"></span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="subfold-body">
+            <div class="item" style="padding-left:0">
+              <span class="grow meta" id="bot-name">机器人昵称：…</span>
+              <button class="btn-outline btn-sm" id="btn-bot-rename">改名</button>
+            </div>
+            <div class="item" style="padding-left:0">
+              <span class="grow meta" id="srv-pw">服务器密码：…</span>
+              <button class="btn-outline btn-sm" id="btn-srv-pw">设置</button>
+            </div>
+            <div class="item" style="padding-left:0">
+              <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
+              <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
+              <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   </details>
