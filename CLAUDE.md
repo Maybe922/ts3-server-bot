@@ -61,7 +61,7 @@ TS3_MIRROR_TEST=1 go test ./internal/tsserver -run TestMirrorFallback -v
 - `ts-client.ts`：TS 语音协议封装（MIT 库 @honeybbq/teamspeak-client）。**单一守护循环**：连接→驻留至断开→5s 重试，任何失败路径都回到循环，绝不静默退出。连接必须带 `serverPassword`（服主在 TS 客户端设的连接密码，面板点歌台可填，改后下轮重连生效）。身份持久化保证 Bot 是"同一个用户"。头像上传（封面）走 `fileTransferInitUpload(0n, "/avatar")` + `clientupdate client_flag_avatar=<md5>`；歌名挂昵称（30 字符上限，注意转义）
 - `player.ts`：音频管线 = 网易云 URL → **Node fetch 下载**（不能让 ffmpeg 自己联网，见下方陷阱）→ **32MB PassThrough 整首预缓存**（防 CDN 掐闲置慢连接，见下方陷阱）→ ffmpeg 从 `pipe:0` 解码 s16le/48k/双声道 → 3840 字节 20ms 帧 → 音量增益 → Opus 编码 → `sendVoice(frame, 5)`。时间戳对齐的帧泵防漂移；播放进度 = 已发帧数×20ms（`status.positionMs`，前端 5s 校准+本地插值）；断流 20s 看门狗自动跳歌；**切歌用 `session` 代际串行化**（并发切歌会泄漏帧泵/ffmpeg，见下方陷阱）；队列实时落盘 `data/queue.json`（进程退出走 `shutdown()` 保留队列，用户点停止走 `stopAll()` 清空——两者语义不同，别混用）
 - `api.ts`：控制 API 只绑 127.0.0.1:3310 + Bearer Token，面板是唯一入口
-- `netease.ts`：搜索（cloudsearch `offset` 翻页）/直链/歌单/扫码登录（cookie 0600 落盘）/封面（CDN `?param=300y300` 出缩略图）
+- `netease.ts`：搜索（cloudsearch `offset` 翻页）/直链/歌单/扫码登录（cookie 0600 落盘）/封面（CDN `?param=300y300` 出缩略图）/歌词（LRC 原文透传，前端解析时间轴并按播放进度本地滚动，一首歌只取一次）
 - `chat-commands.ts`：频道聊天点歌（`!点歌` `!跳过` `!队列` 等，半角/全角前缀都认，中文别名可不加空格）。库对收发消息两头都做了协议转义，业务代码传纯文本即可；回复走 `TSClient.reply`（私聊回私聊、频道回频道）；必须过滤自己发的消息防自触发循环；每用户 2s 冷却防刷屏/洪水保护
 
 ## 硬约束（违反会出产品/法务事故）

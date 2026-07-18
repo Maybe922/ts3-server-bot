@@ -289,6 +289,15 @@
   .chat-hint { margin-top: .4rem; font-size: .8125rem; color: var(--text-dim); }
   .chat-hint code { font-family: inherit; background: var(--surface-2); border-radius: 6px; padding: .05rem .35rem; }
 
+  /* 歌词:上一句/当前句/下一句三行,当前句居中高亮,跟随播放进度滚动 */
+  .lyric { text-align: center; padding: .3rem 0 .05rem; line-height: 1.9; }
+  .lyric .ln {
+    font-size: .8125rem; color: var(--text-faint); min-height: 1.9em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: color .3s ease;
+  }
+  .lyric .ln.cur { font-size: .9375rem; color: var(--accent-strong); font-weight: 600; }
+
   /* Volume */
   .vol { display: flex; align-items: center; gap: 1rem; }
   .vol .lbl { font-size: .8125rem; color: var(--text-dim); white-space: nowrap; }
@@ -375,6 +384,8 @@
       <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
     </summary>
     <div class="sect-body stack">
+      <!-- 服务在跑但接口失联(卡死)时的告警:此时 music-body 是隐藏的,必须有独立提示位 -->
+      <p class="notice hidden" id="bot-stuck"></p>
       <div id="bot-offer" class="hidden">
         <p class="hint">点歌机器人是可选的：启用后「点歌姬」会自动进入你的服务器，随时可以停用。</p>
         <button class="btn-primary btn-block" id="btn-bot-start">启用点歌机器人</button>
@@ -392,6 +403,12 @@
           <div class="progress hidden" id="prog">
             <div class="bar"><div class="fill" id="prog-fill"></div></div>
             <span class="time" id="prog-time">0:00 / 0:00</span>
+          </div>
+          <!-- 歌词随进度滚动;纯音乐或无词自动隐藏 -->
+          <div class="lyric hidden" id="lyric">
+            <div class="ln" id="lyric-prev"></div>
+            <div class="ln cur" id="lyric-cur"></div>
+            <div class="ln" id="lyric-next"></div>
           </div>
           <div class="vol">
             <span class="lbl">音量</span>
@@ -456,6 +473,9 @@
               <span class="grow meta" id="netease-account">网易云账号：查询中…</span>
               <button class="btn-outline btn-sm" id="btn-netease-login">扫码登录</button>
               <button class="btn-outline btn-sm hidden" id="btn-netease-logout">退出账号</button>
+            </div>
+            <div class="item hidden" id="bot-res-row" style="padding-left:0">
+              <span class="grow meta" id="bot-res">资源占用：…</span>
             </div>
           </div>
         </details>
@@ -628,7 +648,40 @@ function renderProgress() {
     $('prog-time').textContent = fmtTime(pos);
   }
 }
-setInterval(renderProgress, 1000);
+// —— 歌词：每首歌取一次 LRC，之后全在本地按插值进度滚动，服务器零负担 ——
+let lyric = { id: null, lines: [] }; // lines: [{t: 毫秒, text}] 按时间升序
+function parseLrc(lrc) {
+  const lines = [];
+  for (const raw of (lrc || '').split('\n')) {
+    const times = [...raw.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
+    if (!times.length) continue;
+    const text = raw.replace(/\[[^\]]*\]/g, '').trim();
+    if (!text) continue; // 空白行(间奏占位)不进列表
+    for (const m of times) lines.push({ t: (parseInt(m[1], 10) * 60 + parseFloat(m[2])) * 1000, text });
+  }
+  return lines.sort((a, b) => a.t - b.t);
+}
+async function loadLyric(track) {
+  lyric = { id: track.id, lines: [] };
+  try {
+    const d = await api('/api/bot/lyrics', { id: track.id });
+    if (lyric.id === track.id) lyric.lines = parseLrc(d.lrc); // 取词期间可能已切歌,只认还是这首时的结果
+  } catch { /* 无歌词就不显示,不打扰 */ }
+  renderLyric();
+}
+function renderLyric() {
+  const el = $('lyric');
+  if (!prog || lyric.lines.length < 2) { show(el, false); return; }
+  const pos = prog.positionMs + (prog.paused ? 0 : Date.now() - prog.at);
+  let i = -1;
+  while (i + 1 < lyric.lines.length && lyric.lines[i + 1].t <= pos) i++;
+  $('lyric-prev').textContent = i > 0 ? lyric.lines[i - 1].text : '';
+  $('lyric-cur').textContent = i >= 0 ? lyric.lines[i].text : '♪';
+  $('lyric-next').textContent = i + 1 < lyric.lines.length ? lyric.lines[i + 1].text : '';
+  show(el, true);
+}
+// 进度条与歌词同一节拍刷新;500ms 让歌词切句更跟手
+setInterval(() => { renderProgress(); renderLyric(); }, 500);
 function itemRow(name, meta, btnText, btnCls, onClick) {
   const row = document.createElement('div'); row.className = 'item';
   const g = document.createElement('span'); g.className = 'grow'; g.textContent = name;
@@ -660,11 +713,30 @@ async function refreshOps() {
   } catch (e) { if (e.message !== '未登录') setMsg($('msg'), e.message, true); }
 }
 
+let botApiFails = 0; // 连续探测失败次数:服务在跑但接口失联 ≥2 次才报"无响应",给刚启动的进程留起身时间
+const BOT_MEM_WARN = 500 * 1024 * 1024; // 正常峰值 ~200MB(含整首预缓存);超过基本是失控前兆
+
+function fmtBytes(b) {
+  if (!b) return '';
+  return b >= 1024 * 1024 * 1024 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round(b / 1048576) + ' MB';
+}
+
 async function refreshBot() {
+  const svcP = api('/api/bot/svc').catch(() => null); // 与 status 并行探测,失败不阻塞
   try {
     const s = await api('/api/bot/status');
+    botApiFails = 0;
+    show($('bot-stuck'), false);
     if (s.connected) chip($('bot-chip'), 'ok', '在线');
     else chip($('bot-chip'), 'warn', '已启动，未连上服务器');
+    // 资源占用 + 内存告警:cgroup 计数含 node 与全部 ffmpeg 子进程,失控时这里先冒烟
+    const svc = await svcP;
+    const mem = svc && svc.memoryBytes ? fmtBytes(svc.memoryBytes) : '';
+    if (mem) $('bot-res').textContent = '资源占用：内存 ' + mem + (svc.tasks ? ' · 任务数 ' + svc.tasks : '');
+    show($('bot-res-row'), !!mem);
+    var memWarn = svc && svc.memoryBytes > BOT_MEM_WARN
+      ? '机器人内存占用异常偏高（' + mem + '），可能出了问题；建议「停用机器人」清理后重新启用（队列会保留）'
+      : null;
     const first = $('music-body').classList.contains('hidden');
     show($('music-body'), true);
     $('now-playing').textContent = s.current
@@ -679,9 +751,12 @@ async function refreshBot() {
       prog = { positionMs: s.positionMs || 0, durationMs: s.current.durationMs || 0, paused: !!s.paused, at: Date.now() };
       show($('prog'), true);
       renderProgress();
+      if (lyric.id !== s.current.id) loadLyric(s.current); else renderLyric();
     } else {
       prog = null;
       show($('prog'), false);
+      lyric = { id: null, lines: [] };
+      show($('lyric'), false);
     }
     $('bot-name').textContent = '机器人昵称：' + (s.nickname || '点歌姬');
     $('bot-name').dataset.name = s.nickname || '';
@@ -692,8 +767,9 @@ async function refreshBot() {
           ? '机器人一直连不上：已填的服务器密码可能不对，请核对后重新「设置」；若服务器没有密码请清除'
           : '机器人一直连不上：如果你在 TS 客户端里给服务器设置了「服务器密码」，请在上方「服务器密码」一栏填入同一个密码')
       : null;
-    $('player-notice').textContent = connHint || s.notice || '';
-    show($('player-notice'), !!(connHint || s.notice));
+    // 提示优先级:连接问题 > 内存告警 > 播放提示
+    $('player-notice').textContent = connHint || memWarn || s.notice || '';
+    show($('player-notice'), !!(connHint || memWarn || s.notice));
     if (!volDragging) { $('vol').value = s.volume; $('vol-num').textContent = s.volume; }
     $('q-count').textContent = s.queue.length ? '· 共 ' + s.queue.length + ' 首' : '';
     const q = $('music-queue'); q.replaceChildren();
@@ -714,15 +790,31 @@ async function refreshBot() {
     show($('bot-offer'), false);
     show($('btn-bot-off'), true);
   } catch {
-    chip($('bot-chip'), 'off', '未启用');
     show($('music-body'), false);
     prog = null;
-    // Bot 已装好但没在跑 → 给出可选的一键启用;正在跑但接口还没就绪 → 保留停用入口
-    try {
-      const svc = await api('/api/bot/svc');
-      show($('bot-offer'), svc.managed && !svc.running);
-      show($('btn-bot-off'), svc.managed && svc.running);
-    } catch { show($('bot-offer'), false); show($('btn-bot-off'), false); }
+    const svc = await svcP;
+    if (svc && svc.managed && svc.running) {
+      // 服务活着但接口失联:要么刚启动还没就绪,要么已经卡死——
+      // 别再误报"未启用"(2026-07-18 事故教训:失控卡死曾被显示成未启用)
+      botApiFails++;
+      if (botApiFails >= 2) {
+        chip($('bot-chip'), 'warn', '运行中，接口无响应');
+        const mem = svc.memoryBytes ? fmtBytes(svc.memoryBytes) : '';
+        $('bot-stuck').textContent = '机器人服务在运行，但接口一直没有应答' + (mem ? '（内存占用 ' + mem + '）' : '') +
+          '——可能卡住了。建议点上方「停用机器人」清理，再重新启用（队列会保留）。';
+        show($('bot-stuck'), true);
+      } else {
+        chip($('bot-chip'), 'warn', '已启动，正在就绪…');
+        show($('bot-stuck'), false);
+      }
+    } else {
+      botApiFails = 0;
+      chip($('bot-chip'), 'off', '未启用');
+      show($('bot-stuck'), false);
+    }
+    // Bot 已装好但没在跑 → 给出可选的一键启用;正在跑 → 保留停用入口
+    show($('bot-offer'), !!(svc && svc.managed && !svc.running));
+    show($('btn-bot-off'), !!(svc && svc.managed && svc.running));
   }
 }
 

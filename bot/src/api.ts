@@ -1,6 +1,6 @@
 // 控制 API：只绑本机回环，供面板代理调用。Bearer Token 鉴权。
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { search, playlist, qrStart, qrCheck, profile, logout } from "./netease.js";
+import { search, playlist, lyrics, qrStart, qrCheck, profile, logout } from "./netease.js";
 import type { Player } from "./player.js";
 import type { TSClient } from "./ts-client.js";
 import { saveConfig, type BotConfig } from "./config.js";
@@ -90,6 +90,11 @@ export function startAPI(config: BotConfig, ts: TSClient, player: Player): void 
         const removed = player.remove(Number(index), Number(id));
         if (!removed) return send(res, 404, { success: false, error: "这首歌已不在队列中" });
         return send(res, 200, { success: true, data: { message: `已移除「${removed.name}」` } });
+      }
+      case "POST /lyrics": {
+        const { id } = await body(req);
+        if (!id) return send(res, 400, { success: false, error: "缺少歌曲 ID" });
+        return send(res, 200, { success: true, data: { lrc: await lyrics(Number(id)) } });
       }
       case "POST /shuffle":
         player.shuffle();

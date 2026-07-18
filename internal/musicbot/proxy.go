@@ -14,7 +14,12 @@ import (
 	"time"
 )
 
-const requestTimeout = 15 * time.Second
+const (
+	requestTimeout = 15 * time.Second
+	// 状态探测要快速失败:健康的 bot 毫秒级应答，3s 没回就是卡死或没起来。
+	// 别让前端等满 15s——2026-07-18 事故中 bot 卡死曾因此被误显示为"未启用"
+	statusTimeout = 3 * time.Second
+)
 
 // ErrNotConfigured 表示 Bot 配置不存在（未安装或未启动过）。
 var ErrNotConfigured = errors.New("音乐 Bot 未安装或尚未启动")
@@ -28,12 +33,14 @@ type botConfig struct {
 type Proxy struct {
 	configPath string
 	client     *http.Client
+	probe      *http.Client
 }
 
 func NewProxy(configPath string) *Proxy {
 	return &Proxy{
 		configPath: configPath,
 		client:     &http.Client{Timeout: requestTimeout},
+		probe:      &http.Client{Timeout: statusTimeout},
 	}
 }
 
@@ -64,7 +71,11 @@ func (p *Proxy) Forward(method, path string, body []byte) (int, []byte, error) {
 	req.Header.Set("Authorization", "Bearer "+cfg.APIToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := p.client.Do(req)
+	client := p.client
+	if path == "/status" {
+		client = p.probe
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, nil, errors.New("音乐 Bot 未在运行")
 	}

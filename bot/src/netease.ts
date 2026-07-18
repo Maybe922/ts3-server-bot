@@ -49,6 +49,18 @@ export async function streamUrl(id: number): Promise<string> {
   return url;
 }
 
+/** 取歌词（LRC 原文，带时间戳）。纯音乐/无歌词/接口失败一律返回空串，绝不阻塞。 */
+export async function lyrics(id: number): Promise<string> {
+  try {
+    const res = await api.lyric({ id, cookie });
+    const body = res.body as any;
+    if (body?.nolyric || body?.pureMusic) return "";
+    return String(body?.lrc?.lyric ?? "");
+  } catch {
+    return "";
+  }
+}
+
 /** 取歌曲封面缩略图（网易云 CDN 直接出 300x300）。封面是锦上添花，任何失败都返回 null 不阻塞播放。 */
 export async function coverImage(id: number): Promise<Buffer | null> {
   try {
