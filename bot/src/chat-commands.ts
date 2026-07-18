@@ -19,25 +19,27 @@ export interface ParsedCommand {
   arg: string;
 }
 
-// 别名 → 动作。中文别名允许不加空格（「!点歌晴天」也认），英文别名要求词边界
+// 别名 → 动作。英文为主指令集（TS 聊天不用切输入法），中文别名保留且允许不加空格（「!点歌晴天」也认）；
+// 英文别名要求词边界
 const ALIASES: Array<[alias: string, action: Action]> = [
-  ["点歌", "play"], ["dg", "play"], ["play", "play"],
-  ["下一首", "skip"], ["跳过", "skip"], ["skip", "skip"], ["next", "skip"],
-  ["上一首", "previous"], ["prev", "previous"],
-  ["暂停", "pause"], ["pause", "pause"],
-  ["继续", "resume"], ["resume", "resume"],
-  ["队列", "queue"], ["queue", "queue"], ["list", "queue"],
-  ["音量", "volume"], ["vol", "volume"], ["volume", "volume"],
-  ["帮助", "help"], ["指令", "help"], ["help", "help"],
+  ["add", "play"], ["play", "play"], ["dg", "play"], ["点歌", "play"],
+  ["skip", "skip"], ["next", "skip"], ["下一首", "skip"], ["跳过", "skip"],
+  ["prev", "previous"], ["上一首", "previous"],
+  ["pause", "pause"], ["暂停", "pause"],
+  ["resume", "resume"], ["继续", "resume"],
+  ["list", "queue"], ["queue", "queue"], ["队列", "queue"],
+  ["vol", "volume"], ["volume", "volume"], ["音量", "volume"],
+  ["help", "help"], ["帮助", "help"], ["指令", "help"],
 ];
 
 const HELP_TEXT = [
   "点歌指令（频道里直接发）：",
-  "!点歌 歌名 — 搜索并加入队列",
-  "!跳过 / !上一首 — 切歌",
-  "!暂停 / !继续",
-  "!队列 — 看正在播的和接下来的歌",
-  "!音量 0-100",
+  "!add 歌名 — 点歌加入队列",
+  "!skip / !prev — 下一首 / 上一首",
+  "!pause / !resume — 暂停 / 继续",
+  "!list — 看正在播的和接下来的歌",
+  "!vol 0-100 — 调音量",
+  "中文也行：!点歌 !跳过 !队列 …",
 ].join("\n");
 
 /** 解析一条聊天消息。支持半角 ! 和中文输入法的全角 ！，不是指令返回 null。 */
@@ -128,7 +130,7 @@ export class ChatCommands {
 
   private async play(keyword: string): Promise<string> {
     if (!keyword) {
-      return "要点什么歌？发「!点歌 歌名」";
+      return "要点什么歌？发「!add 歌名」";
     }
     if (this.player.status().queue.length >= QUEUE_MAX) {
       return `队列已满（${QUEUE_MAX} 首），先消化消化吧`;
@@ -150,7 +152,7 @@ export class ChatCommands {
   private async skip(): Promise<string> {
     const before = this.player.status();
     if (!before.playing && before.queue.length === 0) {
-      return "队列是空的，发「!点歌 歌名」点一首";
+      return "队列是空的，发「!add 歌名」点一首";
     }
     await this.player.skip();
     const cur = this.player.status().current;
@@ -171,13 +173,13 @@ export class ChatCommands {
       return "现在没在放歌";
     }
     this.player.pause();
-    return "已暂停，发「!继续」恢复";
+    return "已暂停，发「!resume」恢复";
   }
 
   private resume(): string {
     const s = this.player.status();
     if (!s.playing) {
-      return "现在没在放歌，发「!点歌 歌名」点一首";
+      return "现在没在放歌，发「!add 歌名」点一首";
     }
     if (!s.paused) {
       return "没有暂停，正在播放中";
@@ -195,7 +197,7 @@ export class ChatCommands {
       lines.push("现在没在放歌");
     }
     if (s.queue.length === 0) {
-      lines.push("队列是空的，发「!点歌 歌名」点一首");
+      lines.push("队列是空的，发「!add 歌名」点一首");
     } else {
       s.queue.slice(0, QUEUE_PREVIEW).forEach((t, i) => {
         lines.push(`${i + 1}. ${t.name} - ${t.artist}`);
@@ -210,7 +212,7 @@ export class ChatCommands {
   private setVolume(arg: string): string {
     const value = Number(arg);
     if (!arg || !Number.isInteger(value) || value < 0 || value > 100) {
-      return `音量要 0-100 的整数，如「!音量 50」（当前 ${this.player.volume}）`;
+      return `音量要 0-100 的整数，如「!vol 50」（当前 ${this.player.volume}）`;
     }
     this.player.volume = value;
     return `音量已调到 ${value}`;
