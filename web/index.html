@@ -285,6 +285,9 @@
   }
   .dropdown-head span:first-child { overflow-wrap: anywhere; }
   .dropdown .list { max-height: min(19rem, 45vh); overflow-y: auto; overscroll-behavior: contain; }
+  /* 聊天点歌提示:搜索框下一行小字 */
+  .chat-hint { margin-top: .4rem; font-size: .8125rem; color: var(--text-dim); }
+  .chat-hint code { font-family: inherit; background: var(--surface-2); border-radius: 6px; padding: .05rem .35rem; }
 
   /* Volume */
   .vol { display: flex; align-items: center; gap: 1rem; }
@@ -418,6 +421,7 @@
             <div class="list compact" id="song-results"></div>
           </div>
         </div>
+        <div class="chat-hint">在 TS 频道里发 <code>!点歌 歌名</code> 也能点歌，<code>!帮助</code> 查看全部指令</div>
         <!-- 歌单导入是低频操作,折叠成一行 -->
         <details class="subfold" id="playlist-fold" data-remember>
           <summary>

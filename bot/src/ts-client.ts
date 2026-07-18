@@ -1,6 +1,6 @@
 // TS 语音客户端封装：身份持久化、连接、断线重连、语音发送。
 // 协议实现来自 MIT 库 @honeybbq/teamspeak-client，本文件只做业务包装。
-import { Client, generateIdentity, identityFromString } from "@honeybbq/teamspeak-client";
+import { Client, generateIdentity, identityFromString, sendTextMessage, type TextMessage } from "@honeybbq/teamspeak-client";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
@@ -40,6 +40,8 @@ export class TSClient {
   private config: BotConfig;
   private stopped = false;
   private failures = 0;
+  /** 收到文本消息的回调（聊天点歌指令入口），由 index.ts 装配。 */
+  onTextMessage: ((msg: TextMessage) => void) | null = null;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -89,6 +91,14 @@ export class TSClient {
       });
     });
 
+    // 频道/私聊/服务器聊天统一进这里；过滤自己发的消息，防止回复触发自己形成循环
+    client.on("textMessage", (msg) => {
+      if (msg.invokerID === client.clientID()) {
+        return;
+      }
+      this.onTextMessage?.(msg);
+    });
+
     try {
       await client.connect();
       await client.waitConnected(AbortSignal.timeout(15_000));
@@ -106,6 +116,17 @@ export class TSClient {
   /** 发送一帧 20ms 的 Opus 音频。未连接时静默丢弃。 */
   sendOpusFrame(frame: Uint8Array): void {
     this.client?.sendVoice(frame, OPUS_MUSIC_CODEC);
+  }
+
+  /** 回复一条文本消息：私聊回私聊，频道/服务器聊天回原处。库内部会做协议转义。 */
+  async reply(to: TextMessage, text: string): Promise<void> {
+    const client = this.client;
+    if (!client) {
+      return;
+    }
+    // targetMode 1=私聊(target 为对方 clid)，2=频道，3=服务器(target 被忽略)
+    const target = to.targetMode === 1 ? BigInt(to.invokerID) : 0n;
+    await sendTextMessage(client, to.targetMode, target, text);
   }
 
   /** 把图片设为 Bot 头像（TS 客户端信息栏显示）。

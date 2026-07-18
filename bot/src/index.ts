@@ -2,10 +2,14 @@ import { loadConfig } from "./config.js";
 import { TSClient } from "./ts-client.js";
 import { Player } from "./player.js";
 import { startAPI } from "./api.js";
+import { ChatCommands } from "./chat-commands.js";
 
 const config = loadConfig();
 const ts = new TSClient(config);
 const player = new Player(ts);
+// 频道聊天点歌：「!点歌 歌名」等指令，handle 自带兜底永不抛出
+const chat = new ChatCommands(player, ts);
+ts.onTextMessage = (msg) => void chat.handle(msg);
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
