@@ -24,7 +24,7 @@ import (
 var webFS embed.FS
 
 const (
-	version    = "0.6.2"
+	version    = "0.6.3"
 	cookieName = "ts3panel_session"
 	queryAddr  = "127.0.0.1:10011"
 )
