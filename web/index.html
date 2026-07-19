@@ -307,6 +307,20 @@
   .msg { font-size: .875rem; min-height: 1.25rem; color: var(--text-dim); }
   .msg.err { color: var(--danger); }
   .foot { text-align: center; color: var(--text-faint); font-size: .75rem; }
+  /* 问题反馈:页脚入口,弹出开发者微信二维码 */
+  .fb-anchor { position: relative; display: inline-block; }
+  .fb-link {
+    font: inherit; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;
+  }
+  .fb-link:hover { color: var(--accent-strong); text-decoration: underline; }
+  .fb-pop {
+    position: absolute; bottom: calc(100% + .6rem); left: 50%; transform: translateX(-50%);
+    z-index: 60; width: 10.5rem; display: grid; gap: .3rem; text-align: center;
+    background: #fff; border-radius: 12px; padding: .65rem .65rem .5rem;
+    box-shadow: 0 16px 44px -12px rgba(0, 0, 0, .5);
+  }
+  .fb-pop img { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .fb-pop b { color: #333; font-size: .75rem; }
 
   /* QR modal */
   .modal-backdrop {
@@ -547,7 +561,15 @@
     </div>
   </details>
 
-  <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板</p>
+  <p class="foot">TS3 Panel · 开源的 TeamSpeak 一键部署与管理面板 ·
+    <span class="fb-anchor">
+      <button class="fb-link" id="btn-feedback" aria-haspopup="dialog" aria-expanded="false">问题反馈</button>
+      <span class="fb-pop hidden" id="fb-pop" role="dialog" aria-label="开发者微信">
+        <img src="data:image/png;base64,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" alt="开发者微信二维码" width="420" height="429">
+        <b id="fb-note">微信扫码 · Ericttkx_</b>
+      </span>
+    </span>
+  </p>
 </main>
 
 <!-- 扫码弹窗 -->
@@ -682,6 +704,21 @@ function renderLyric() {
 }
 // 进度条与歌词同一节拍刷新;500ms 让歌词切句更跟手
 setInterval(() => { renderProgress(); renderLyric(); }, 500);
+
+// —— 问题反馈:弹出开发者微信二维码,能复制就顺手复制 ——
+$('btn-feedback').onclick = async e => {
+  e.stopPropagation();
+  const pop = $('fb-pop');
+  const opening = pop.classList.contains('hidden');
+  show(pop, opening);
+  $('btn-feedback').setAttribute('aria-expanded', String(opening));
+  if (!opening) return;
+  // http 环境剪贴板 API 不可用,失败就只展示二维码,不打扰
+  try { await navigator.clipboard.writeText('Ericttkx_'); $('fb-note').textContent = '已复制微信号 · Ericttkx_'; }
+  catch { $('fb-note').textContent = '微信扫码 · Ericttkx_'; }
+};
+document.addEventListener('click', e => { if (!e.target.closest('.fb-anchor')) show($('fb-pop'), false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') show($('fb-pop'), false); });
 function itemRow(name, meta, btnText, btnCls, onClick) {
   const row = document.createElement('div'); row.className = 'item';
   const g = document.createElement('span'); g.className = 'grow'; g.textContent = name;
